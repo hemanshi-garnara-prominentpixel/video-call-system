@@ -302,7 +302,7 @@ import type { MeetingState } from '../hooks/useMeetingTimer';
 import { formatTime, formatCountdown } from '../utils/formatters';
 import { Modal } from '../components/Modal';
 import { VideoCall } from '../components/VideoCall';
-import { CalendarClock, Video, PhoneOff, RefreshCw } from 'lucide-react';
+import { CalendarClock, Video, PhoneOff, RefreshCw, Loader2 } from 'lucide-react';
 
 export function JoinCall() {
   const [meeting, setMeeting] = useState<any | null>(null);
@@ -318,6 +318,7 @@ export function JoinCall() {
 
   // Permission state: 'checking' | 'granted' | 'denied' | 'prompt'
   const [permissionStatus, setPermissionStatus] = useState<string>('checking');
+  const [isInitialCheck, setIsInitialCheck] = useState(true);
 
   // ── Auto-check & request permissions on page load ──
   useEffect(() => {
@@ -369,7 +370,9 @@ export function JoinCall() {
     const id = params.get('meetingId');
     if (id && MEETINGS[id]) {
       setMeeting({ id, ...MEETINGS[id] });
+      setIsInitialCheck(false);
     } else {
+      setIsInitialCheck(false);
       setTimeout(() => {
         setModalObj({
           type: 'error',
@@ -515,7 +518,30 @@ export function JoinCall() {
   // Get user-friendly message and icon based on reason
   
 
-  // ── If the user has joined the call, show the full screen video interface ──
+  // ── 1. Initialization Guard ─────────────────────────
+  // Prevent any UI from rendering until we have checked for the meeting
+  if (isInitialCheck) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans">
+        <div className="flex flex-col items-center gap-6 animate-in fade-in duration-700">
+          <div className="w-20 h-20 rounded-[28px] bg-white shadow-xl shadow-slate-200/50 border border-slate-100 flex items-center justify-center relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-50/50 to-transparent" />
+            <Loader2 size={32} className="text-blue-500 animate-spin relative z-10" />
+          </div>
+          <div className="text-center space-y-1.5">
+            <p className="text-slate-500 font-bold uppercase tracking-[0.2em] text-[10px]">
+              Secure Connection
+            </p>
+            <p className="text-slate-400 text-sm font-medium animate-pulse">
+              Initializing meeting session...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 2. Active Session View ───────────────────────────────
   if (inCall && meetingData) {
     return (
       <VideoCall
@@ -526,9 +552,8 @@ export function JoinCall() {
     );
   }
 
-  // ── Meeting ended screen ──
+  // ── 3. Post-Call Screen ──────────────────────────────
   if (meetingEnded) {
-
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans text-slate-800">
         <div className="w-full max-w-md bg-white p-8 rounded-[28px] shadow-2xl shadow-slate-200/50 border border-slate-100 flex flex-col items-center text-center relative overflow-hidden animate-in zoom-in-95 duration-500">
@@ -700,44 +725,82 @@ export function JoinCall() {
           </div>
         </div>
 
+      ) : state === 'EXPIRED' ? (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-500">
+          <div className="w-full max-w-sm bg-white rounded-[28px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] overflow-hidden animate-in zoom-in-95 duration-500 relative">
+            <div className="absolute top-0 inset-x-0 h-32 bg-gradient-to-b from-rose-50/80 to-transparent pointer-events-none" />
+            
+            <div className="relative p-8 sm:p-10 flex flex-col items-center text-center">
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5 bg-gradient-to-br from-rose-50 to-rose-100/50 border border-rose-200/50 shadow-inner text-rose-500 relative">
+                <CalendarClock size={28} className="relative z-10" />
+              </div>
+              
+              <div className="inline-flex items-center justify-center px-3.5 py-1.5 rounded-md bg-rose-50 border border-rose-200 text-rose-600 text-[11px] font-black tracking-widest uppercase mb-4 shadow-sm">
+                Session Expired
+              </div>
+
+              <h2 className="text-xl font-black text-slate-800 mb-2">
+                This meeting has ended
+              </h2>
+
+              <p className="text-[13px] font-medium text-slate-500 mb-8 px-2 leading-relaxed">
+                The scheduled time for this session has passed. If you believe this is an error, please contact your meeting organiser.
+              </p>
+              
+              <div className="w-full space-y-3">
+                <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col items-center">
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1.5">
+                    Session was scheduled for
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-black text-slate-800 tracking-tight">
+                      {startTime ? formatTime(startTime) : '--:--'}
+                    </span>
+                    <span className="text-slate-300">—</span>
+                    <span className="text-lg font-black text-slate-800 tracking-tight">
+                      {endTime ? formatTime(endTime) : '--:--'}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    window.open('', '_self'); 
+                    window.close();           
+                  }}  
+                  className="w-full py-4 px-6 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-[15px] font-bold transition-all border border-slate-200"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
       ) : (
 
-        /* Main Card for INVALID, EXPIRED */
+        /* Main Card for INVALID */
         <div className="w-full max-w-md bg-white border border-slate-200 rounded-[28px] shadow-2xl shadow-slate-200/50 overflow-hidden relative animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="h-1.5 w-full bg-slate-300" />
           
-          <div className="p-8 sm:p-10">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-2 h-2 rounded-full bg-slate-300" />
-              <span className="text-[10px] font-bold tracking-widest uppercase text-slate-500">
-                Scheduled Session
-              </span>
+          <div className="p-8 sm:p-10 text-center flex flex-col items-center">
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6 bg-slate-50 text-slate-400 border border-slate-200/50 shadow-inner">
+              <PhoneOff size={28} />
             </div>
 
-            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 mb-2">
-              {meeting ? meeting.name || 'Invalid Link' : 'Invalid Link'}
+            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 mb-2">
+              Invalid Link
             </h1>
-            <p className="text-sm text-slate-500 font-medium mb-6">
-              {meeting ? 'Waiting for session to open...' : 'No meeting found for this ID.'}
+            <p className="text-sm text-slate-500 font-medium mb-8 leading-relaxed">
+              We couldn't find a meeting with that ID. Please check your invitation link and try again.
             </p>
 
-            {state === 'EXPIRED' && (
-              <button
-                disabled
-                className="w-full mt-8 py-4 px-6 rounded-2xl text-[13px] font-bold uppercase tracking-widest bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-inner"
-              >
-                Session Ended
-              </button>
-            )}
-            
-            {state === 'INVALID' && (
-              <button
-                disabled
-                className="w-full mt-8 py-4 px-6 rounded-2xl text-[13px] font-bold uppercase tracking-widest bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-inner"
-              >
-                Link Not Found
-              </button>
-            )}
+            <button
+              disabled
+              className="w-full py-4 px-6 rounded-xl text-[13px] font-bold uppercase tracking-widest bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-inner"
+            >
+              Link Not Found
+            </button>
           </div>
         </div>
       )}

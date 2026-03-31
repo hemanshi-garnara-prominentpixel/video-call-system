@@ -31,6 +31,7 @@ export function VideoCall({ meetingData, displayName, onLeave }: VideoCallProps)
     isVideoOn,
     isScreenSharing,
     tiles,
+    remoteAttendeeIds,
     error,
     bindVideoElement,
     bindAudioElement,
@@ -52,12 +53,11 @@ export function VideoCall({ meetingData, displayName, onLeave }: VideoCallProps)
 
   // Separate tiles by type
   const localTile = tiles.find((t) => t.isLocal && !t.isContent);
-  // Only show the most recent (last) content tile — handles override scenario
+  const remoteTile = tiles.find((t) => !t.isLocal && !t.isContent);
+  const isAgentJoined = remoteAttendeeIds.length > 0;
+
   const contentTiles = tiles.filter((t) => t.isContent);
   const activeContentTile = contentTiles.length > 0 ? contentTiles[contentTiles.length - 1] : null;
-  const remoteTiles = tiles.filter((t) => !t.isLocal && !t.isContent);
-
-  // Determine layout: if screen share is active, use presenter layout
   const hasContentShare = activeContentTile !== null;
 
   if (isConnecting || !isConnected) {
@@ -69,7 +69,7 @@ export function VideoCall({ meetingData, displayName, onLeave }: VideoCallProps)
             {error ? 'Connection failed' : 'Connecting to meeting...'}
           </p>
           {error && (
-            <div className="mt-4 max-w-sm">
+            <div className="mt-4 max-w-sm mx-auto px-4">
               <p className="text-red-400 text-sm mb-4">{error}</p>
               <button
                 onClick={onLeave}
@@ -85,107 +85,129 @@ export function VideoCall({ meetingData, displayName, onLeave }: VideoCallProps)
   }
 
   return (
-    <div className="fixed inset-0 bg-slate-900 flex flex-col z-50">
+    <div className="fixed inset-0 bg-slate-900 flex flex-col z-50 overflow-hidden">
       {/* Hidden audio element for remote audio */}
       <audio ref={audioRef} autoPlay className="hidden" />
 
-      {/* ── Video Grid ──────────────────────────────────── */}
-      <div className="flex-1 p-3 sm:p-4 overflow-hidden">
+      {/* ── Main Content Area ────────────────────────────── */}
+      <div className="flex-1 relative p-3 sm:p-4 overflow-hidden">
         {hasContentShare ? (
-          /* ── Presenter Layout (screen share active) ─── */
-          <div className="h-full flex flex-col lg:flex-row gap-3">
-            {/* Main content share */}
-            <div className="flex-1 min-h-0">
-              {activeContentTile && (
-                <VideoTile
-                  key={activeContentTile.tileId}
-                  tileId={activeContentTile.tileId}
-                  isLocal={activeContentTile.isLocal}
-                  isContent={activeContentTile.isContent}
-                  active={activeContentTile.active}
-                  label={activeContentTile.isLocal ? 'Your Screen' : 'Agent Screen'}
-                  bindVideoElement={bindVideoElement}
-                  className="w-full h-full"
-                />
-              )}
+          /* ── Screen Share Layout (70/30 Split) ─── */
+          <div className="h-full flex flex-col lg:flex-row gap-4">
+            {/* Left: Screen Share (70%) */}
+            <div className="flex-1 lg:flex-[0.7] min-h-0">
+              <VideoTile
+                key={activeContentTile.tileId}
+                tileId={activeContentTile.tileId}
+                isLocal={activeContentTile.isLocal}
+                isContent={true}
+                active={activeContentTile.active}
+                label={
+                  activeContentTile.isLocal
+                    ? 'Your Screen'
+                    : isAgentJoined
+                    ? 'Agent Screen'
+                    : 'Shared Screen'
+                }
+                bindVideoElement={bindVideoElement}
+                className="w-full h-full border border-white/10"
+              />
             </div>
 
-            {/* Sidebar with participants */}
-            <div className="flex lg:flex-col gap-2 lg:w-52 overflow-x-auto lg:overflow-y-auto">
-              {localTile && (
+            {/* Right: Sidebar (30%) — always render both participant tiles */}
+            <div className="flex lg:flex-[0.3] gap-3 lg:flex-col overflow-x-auto lg:overflow-y-auto justify-center">
+              {/* Agent tile in sidebar */}
+              {isAgentJoined ? (
                 <VideoTile
-                  key={localTile.tileId}
-                  tileId={localTile.tileId}
-                  isLocal={true}
-                  isContent={false}
-                  active={localTile.active}
-                  label={displayName}
-                  bindVideoElement={bindVideoElement}
-                  className="w-36 h-28 lg:w-full lg:h-36 flex-shrink-0"
-                />
-              )}
-              {remoteTiles.map((tile) => (
-                <VideoTile
-                  key={tile.tileId}
-                  tileId={tile.tileId}
+                  key="agent-sidebar"
+                  tileId={remoteTile?.tileId ?? -1}
                   isLocal={false}
                   isContent={false}
-                  active={tile.active}
-                  label="Participant"
+                  active={!!remoteTile && remoteTile.active}
+                  label="Agent"
                   bindVideoElement={bindVideoElement}
-                  className="w-36 h-28 lg:w-full lg:h-36 flex-shrink-0"
+                  className="w-36 h-24 lg:w-full lg:h-auto lg:aspect-video flex-shrink-0"
                 />
-              ))}
+              ) : (
+                <div className="w-36 h-24 lg:w-full lg:aspect-video flex-shrink-0 rounded-2xl bg-slate-800 border border-white/10 flex items-center justify-center">
+                  <p className="text-slate-500 text-[10px] font-medium text-center px-2">
+                    Waiting for Agent...
+                  </p>
+                </div>
+              )}
+
+              {/* Customer tile in sidebar — always render once connected */}
+              <VideoTile
+                key="local-sidebar"
+                tileId={localTile?.tileId ?? -1}
+                isLocal={true}
+                isContent={false}
+                active={isVideoOn}
+                isMini={false}
+                label={displayName}
+                bindVideoElement={bindVideoElement}
+                className="w-36 h-24 lg:w-full lg:h-auto lg:aspect-video flex-shrink-0"
+              />
             </div>
           </div>
         ) : (
-          /* ── Grid Layout (no screen share) ────────── */
-          <div className={`h-full grid gap-3 ${getGridClass(remoteTiles.length + (localTile ? 1 : 0))}`}>
-            {localTile && (
+          /* ── Video-Only Layout ────────────────── */
+          <div className="relative h-full w-full rounded-2xl overflow-hidden bg-slate-950">
+
+            {/* Primary View — Agent (fills the whole area) */}
+            <div className="absolute inset-0">
+              {isAgentJoined ? (
+                <VideoTile
+                  key="agent-main"
+                  tileId={remoteTile?.tileId ?? -1}
+                  isLocal={false}
+                  isContent={false}
+                  active={!!remoteTile && remoteTile.active}
+                  label="Agent"
+                  bindVideoElement={bindVideoElement}
+                  className="w-full h-full"
+                />
+              ) : (
+                /* Agent truly hasn't joined yet — no presence detected */
+                <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-slate-800 to-slate-900 border border-white/5 rounded-2xl shadow-inner">
+                  <div className="w-14 h-14 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                    <Loader2 size={24} className="text-slate-500 animate-spin" />
+                  </div>
+                  <p className="text-slate-400 font-medium tracking-wide text-sm">
+                    Waiting for Agent to join...
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Floating Customer PiP tile (top-right corner) — always render once connected */}
+            <div className="absolute top-4 right-4 w-32 h-20 sm:w-44 sm:h-28 lg:w-56 lg:h-36 z-20 transition-all duration-500">
               <VideoTile
-                key={localTile.tileId}
-                tileId={localTile.tileId}
+                key="local-pip"
+                tileId={localTile?.tileId ?? -1}
                 isLocal={true}
                 isContent={false}
-                active={localTile.active}
+                active={isVideoOn}
+                isMini={true}
                 label={displayName}
                 bindVideoElement={bindVideoElement}
-                className="w-full h-full"
+                className="w-full h-full shadow-2xl shadow-black/50 ring-1 ring-white/10"
               />
-            )}
-            {remoteTiles.map((tile) => (
-              <VideoTile
-                key={tile.tileId}
-                tileId={tile.tileId}
-                isLocal={false}
-                isContent={false}
-                active={tile.active}
-                label="Participant"
-                bindVideoElement={bindVideoElement}
-                className="w-full h-full"
-              />
-            ))}
-
-            {/* Empty state when alone */}
-            {remoteTiles.length === 0 && !localTile && (
-              <div className="flex items-center justify-center text-slate-500 col-span-full">
-                <p className="text-sm font-medium">Waiting for Agent to join...</p>
-              </div>
-            )}
+            </div>
           </div>
         )}
       </div>
 
       {/* ── Controls Bar ────────────────────────────────── */}
-      <div className="flex-shrink-0 pb-6 pt-2 px-4">
+      <div className="flex-shrink-0 pb-6 pt-2 px-4 bg-slate-900">
         <div className="flex items-center justify-center gap-3">
           {/* Mute toggle */}
           <button
             onClick={toggleMute}
-            className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition-all ${
+            className={`group w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center shadow-lg transition-all ${
               isMuted
-                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                : 'bg-white/10 text-white hover:bg-white/20'
+                ? 'bg-rose-500/10 text-rose-500 ring-1 ring-rose-500/20 hover:bg-rose-500/20'
+                : 'bg-white/5 text-white ring-1 ring-white/10 hover:bg-white/10'
             }`}
             title={isMuted ? 'Unmute' : 'Mute'}
           >
@@ -195,10 +217,10 @@ export function VideoCall({ meetingData, displayName, onLeave }: VideoCallProps)
           {/* Video toggle */}
           <button
             onClick={toggleVideo}
-            className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition-all ${
+            className={`group w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center shadow-lg transition-all ${
               !isVideoOn
-                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                : 'bg-white/10 text-white hover:bg-white/20'
+                ? 'bg-rose-500/10 text-rose-500 ring-1 ring-rose-500/20 hover:bg-rose-500/20'
+                : 'bg-white/5 text-white ring-1 ring-white/10 hover:bg-white/10'
             }`}
             title={isVideoOn ? 'Turn off camera' : 'Turn on camera'}
           >
@@ -208,10 +230,10 @@ export function VideoCall({ meetingData, displayName, onLeave }: VideoCallProps)
           {/* Screen share toggle */}
           <button
             onClick={toggleScreenShare}
-            className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition-all ${
+            className={`group w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center shadow-lg transition-all ${
               isScreenSharing
-                ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
-                : 'bg-white/10 text-white hover:bg-white/20'
+                ? 'bg-sky-500/10 text-sky-500 ring-1 ring-sky-500/20 hover:bg-sky-500/20'
+                : 'bg-white/5 text-white ring-1 ring-white/10 hover:bg-white/10'
             }`}
             title={isScreenSharing ? 'Stop sharing' : 'Share screen'}
           >
@@ -221,7 +243,7 @@ export function VideoCall({ meetingData, displayName, onLeave }: VideoCallProps)
           {/* Leave call */}
           <button
             onClick={leaveMeeting}
-            className="w-14 h-12 sm:w-16 sm:h-14 rounded-2xl bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-all shadow-lg shadow-red-500/30"
+            className="w-14 h-12 sm:w-16 sm:h-14 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center transition-all shadow-xl shadow-rose-600/30 ring-1 ring-rose-400/20"
             title="Leave call"
           >
             <PhoneOff size={20} />
@@ -230,14 +252,4 @@ export function VideoCall({ meetingData, displayName, onLeave }: VideoCallProps)
       </div>
     </div>
   );
-}
-
-/** Returns a Tailwind grid class based on participant count */
-function getGridClass(count: number): string {
-  if (count <= 1) return 'grid-cols-1';
-  if (count === 2) return 'grid-cols-1 sm:grid-cols-2';
-  if (count <= 4) return 'grid-cols-2';
-  if (count <= 6) return 'grid-cols-2 lg:grid-cols-3';
-  if (count <= 9) return 'grid-cols-3';
-  return 'grid-cols-3 lg:grid-cols-4';
 }

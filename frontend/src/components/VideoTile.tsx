@@ -73,7 +73,7 @@
 
 
 import { useEffect, useRef } from 'react';
-import { Monitor } from 'lucide-react';
+import { Monitor, VideoOff } from 'lucide-react';
 
 interface VideoTileProps {
   tileId: number;
@@ -96,7 +96,7 @@ function getInitials(name: string): string {
     .join('');
 }
 
-/** Deterministic pastel background from a string */
+/** Deterministic gradient color from a string */
 function avatarColor(name: string): string {
   const colors = [
     'from-violet-500 to-purple-600',
@@ -137,71 +137,93 @@ export function VideoTile({
   const gradient = label ? avatarColor(label) : 'from-slate-500 to-slate-600';
 
   return (
-    <div className={`group relative overflow-hidden ${isContent ? 'rounded-2xl' : 'rounded-2xl'} ${className}`}
+    <div
+      className={`group relative overflow-hidden rounded-2xl ${className}`}
       style={{ background: '#0f172a' }}
     >
-      {/* Video element */}
+      {/* Video element — always mounted so Chime can bind to it */}
       <video
         ref={videoRef}
         autoPlay
-        // style={{ transform: isLocal && !isContent ? 'scaleX(-1)' : 'none' }}
-        style={{ transform: 'none' }}
+        style={{ transform: isLocal && !isContent ? 'scaleX(-1)' : 'none' }}
         playsInline
         muted={isLocal}
         className={`w-full h-full ${isContent ? 'object-contain' : 'object-cover'} transition-opacity duration-300 ${
           active ? 'opacity-100' : 'opacity-0'
-        } `}
+        }`}
       />
 
-      {/* Avatar placeholder when video is off */}
+      {/* ── Avatar placeholder when video is off ── */}
       {!active && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3"
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center gap-2"
           style={{ background: 'linear-gradient(145deg, #1e293b 0%, #0f172a 100%)' }}
         >
           {isContent ? (
+            /* Content/screen share placeholder */
             <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
               <Monitor size={28} className="text-slate-400" />
             </div>
           ) : (
             <>
-              <div className={`${isMini ? 'w-10 h-10 text-sm' : 'w-16 h-16 text-xl'} rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center font-bold text-white shadow-lg`}>
+              {/* Initials avatar circle */}
+              <div
+                className={`
+                  ${isMini ? 'w-9 h-9 text-xs' : 'w-16 h-16 text-xl'}
+                  rounded-full bg-gradient-to-br ${gradient}
+                  flex items-center justify-center font-bold text-white
+                  shadow-lg ring-2 ring-white/10
+                `}
+              >
                 {initials}
               </div>
-              {!isMini && label && (
-                <span className="text-sm font-medium text-slate-400">{label}</span>
-              )}
+
+              {/* Name — shown in full-size tiles only */}
+              {/* {!isMini && label && (
+                <span className="text-sm font-semibold text-white tracking-wide mt-1">
+                  {label}
+                </span>
+              )} */}
+
+              {/*
+               * "Camera off" pill — shown in full-size tiles for BOTH
+               * local (customer) and remote (agent) participants.
+               * In mini/PiP mode we skip it to avoid clutter.
+               */}
+              {/* {!isMini && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10 mt-0.5">
+                  <VideoOff size={11} className="text-slate-400" />
+                  <span className="text-[11px] text-slate-400 font-medium">Camera off</span>
+                </div>
+              )} */}
             </>
           )}
         </div>
       )}
 
-      {/* Bottom gradient overlay for label readability */}
+      {/* Bottom gradient overlay (only when video is live) */}
       {active && label && (
         <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/60 via-black/20 to-transparent pointer-events-none" />
       )}
 
-      {/* Label badge */}
+      {/* Name badge (bottom-left, always visible) */}
       {label && (
-        <div className={`absolute left-3 flex items-center gap-1.5 transition-opacity ${
-          active ? 'bottom-3' : 'bottom-3'
-        }`}>
+        <div className="absolute left-3 bottom-3 flex items-center gap-1.5">
           {isContent && (
             <div className="w-5 h-5 rounded bg-blue-500/90 flex items-center justify-center">
               <Monitor size={11} className="text-white" />
             </div>
           )}
           <span className={`${isMini ? 'text-[10px]' : 'text-xs'} font-semibold text-white drop-shadow-md`}>
-            {isContent ? (label) : label}
+            {label}
           </span>
         </div>
       )}
 
-      {/* "You" badge for local tile */}
+      {/* "You" badge (top-right, local tile only) */}
       {isLocal && !isContent && (
-        <div className="absolute top-3 right-3">
-          <div className="absolute top-3 right-3 px-2 py-1 rounded-md bg-blue-500/80 backdrop-blur-sm">
+        <div className="absolute top-3 right-3 px-2 py-1 rounded-md bg-blue-500/80 backdrop-blur-sm">
           <span className="text-[10px] font-bold text-white uppercase tracking-wide">You</span>
-       </div>
         </div>
       )}
 

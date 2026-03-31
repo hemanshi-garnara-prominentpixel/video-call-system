@@ -680,6 +680,7 @@ export function useChimeMeeting({ meetingData, onMeetingEnd }: UseChimeMeetingPr
   const [isVideoOn, setIsVideoOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [tiles, setTiles] = useState<TileInfo[]>([]);
+  const [remoteAttendeeIds, setRemoteAttendeeIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   // ── FIX 1: Track our attendee ID to detect override ──
@@ -820,6 +821,24 @@ export function useChimeMeeting({ meetingData, onMeetingEnd }: UseChimeMeetingPr
         meetingSession.audioVideo.addObserver(observer);
         meetingSession.audioVideo.addContentShareObserver(contentObserver);
 
+        // ── Real-time Presence Subscription ─────────────────
+        meetingSession.audioVideo.realtimeSubscribeToAttendeeIdPresence(
+          (attendeeId, present) => {
+            if (cancelled) return;
+            const localId = localAttendeeIdRef.current;
+            // Ignore ourselves and content shares
+            if (attendeeId === localId || attendeeId.endsWith('#content')) return;
+
+            setRemoteAttendeeIds((prev) => {
+              if (present) {
+                if (prev.includes(attendeeId)) return prev;
+                return [...prev, attendeeId];
+              }
+              return prev.filter((id) => id !== attendeeId);
+            });
+          }
+        );
+
         // ── Select devices ──────────────────────────────────
         try {
           const audioInputs = await meetingSession.audioVideo.listAudioInputDevices();
@@ -878,6 +897,7 @@ export function useChimeMeeting({ meetingData, onMeetingEnd }: UseChimeMeetingPr
       setIsConnecting(false);
       setIsScreenSharing(false);
       setTiles([]);
+      setRemoteAttendeeIds([]);
     };
   }, [meetingData]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -970,6 +990,7 @@ export function useChimeMeeting({ meetingData, onMeetingEnd }: UseChimeMeetingPr
     isVideoOn,
     isScreenSharing,
     tiles,
+    remoteAttendeeIds,
     error,
     bindVideoElement,
     bindAudioElement,
