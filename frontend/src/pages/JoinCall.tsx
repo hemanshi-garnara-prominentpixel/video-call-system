@@ -1,0 +1,753 @@
+// import { useEffect, useState } from 'react';
+// import { MEETINGS } from '../utils/meetings';
+// import { useMeetingTimer } from '../hooks/useMeetingTimer';
+// import type { MeetingState } from '../hooks/useMeetingTimer';
+// import { formatTime, formatCountdown } from '../utils/formatters';
+// import { Modal } from '../components/Modal';
+// import { VideoCall } from '../components/VideoCall';
+// import { CalendarClock, Video } from 'lucide-react';
+
+// export function JoinCall() {
+//   const [meeting, setMeeting] = useState<any | null>(null);
+//   const [modalObj, setModalObj] = useState<any>(null); // For custom modals
+
+//   // Video call state
+//   const [displayName, setDisplayName] = useState('');
+//   const [isJoining, setIsJoining] = useState(false);
+//   const [inCall, setInCall] = useState(false);
+//   const [error, setError] = useState('');
+//   const [meetingData, setMeetingData] = useState<any | null>(null);
+
+//   useEffect(() => {
+//     const params = new URLSearchParams(window.location.search);
+//     const id = params.get('meetingId');
+//     if (id && MEETINGS[id]) {
+//       setMeeting({ id, ...MEETINGS[id] });
+//     } else {
+//       setTimeout(() => {
+//         setModalObj({
+//           type: 'error',
+//           icon: <span className="text-2xl">🔗</span>,
+//           title: 'Invalid Meeting Link',
+//           msg: <div>No meeting found. Please check your invite link or contact the organiser.<br/><br/>A valid link looks like: <code className="bg-slate-100 text-rose-500 px-1 py-0.5 rounded">?meetingId=abc123</code></div>,
+//           actions: [{ label: 'Got it', style: 'danger', fn: () => setModalObj(null) }]
+//         });
+//       }, 500);
+//     }
+//   }, []);
+
+//   useEffect(() => {
+//     return () => {
+//       setMeetingData(null);
+//     };
+//   }, []);
+
+//   const { state: timerState, startTime, endTime } = useMeetingTimer(meeting);
+
+//   // Consider it "invalid" if no meeting is loaded yet, otherwise use timer state
+//   const state: MeetingState = !meeting ? 'INVALID' : timerState;
+
+//   const handleJoinCall = async (e: React.FormEvent) => {
+//     e.preventDefault();
+//     if (!displayName.trim()) {
+//       setError('Please enter your name');
+//       return;
+//     }
+
+//     setIsJoining(true);
+//     setError('');
+
+//     // 30-second timeout so we don't hang indefinitely
+//     const controller = new AbortController();
+//     // const timeoutId = setTimeout(() => controller.abort(), 50_000);
+
+//     try {
+//       let response: Response;
+//       try {
+//         response = await fetch('http://localhost:3000/api/video/join', {
+//           method: 'POST',
+//           headers: {
+//             'Content-Type': 'application/json',
+//           },
+//           body: JSON.stringify({ displayName: displayName.trim() }),
+//           signal: controller.signal,
+//         });
+//       } catch (fetchError: any) {
+//         // Network-level failures (offline, DNS, CORS, timeout)
+//         if (fetchError.name === 'AbortError') {
+//           throw new Error(
+//             'The request timed out. Please check your internet connection and make sure the backend server is running.'
+//           );
+//         }
+//         throw new Error(
+//           'Could not reach the server. Please make sure the backend is running at localhost:3000.'
+//         );
+//       }
+
+//       // Parse JSON safely
+//       let data: any;
+//       try {
+//         data = await response.json();
+//       } catch {
+//         throw new Error(
+//           `Server returned an unexpected response (HTTP ${response.status}). The backend may be misconfigured.`
+//         );
+//       }
+
+//       // API-level errors
+//       if (!response.ok || !data.success) {
+//         const serverMessage = data?.error?.message || 'Failed to join meeting';
+//         const errorCode = data?.error?.code || 'UNKNOWN';
+//         const retryable = data?.error?.retryable === true;
+
+//         console.error('[JOIN] Server error:', { errorCode, serverMessage, retryable });
+
+//         if (retryable) {
+//           throw new Error(`${serverMessage} (You can try again.)`);
+//         }
+//         throw new Error(serverMessage);
+//       }
+
+//       // Validate the meeting data we received
+//       const meetingPayload = data.data;
+//       if (!meetingPayload?.meeting || !meetingPayload?.attendee) {
+//         throw new Error(
+//           'The server returned an incomplete response — meeting or attendee data is missing. Please try again.'
+//         );
+//       }
+
+//       setMeetingData(meetingPayload);
+//       setInCall(true);
+//     } catch (err: any) {
+//       console.error('Error joining meeting:', err);
+//       setError(err.message || 'An unexpected error occurred while joining the meeting.');
+//     } finally {
+//       // clearTimeout(timeoutId);
+//       setIsJoining(false);
+//     }
+//   };
+
+//   const endCall = () => {
+//     setMeetingData(null);
+//     setInCall(false);
+//   };
+
+//   // ── If the user has joined the call, show the full screen video interface ──
+//   if (inCall && meetingData) {
+//     return (
+//       <VideoCall
+//         meetingData={meetingData}
+//         displayName={displayName}
+//         onLeave={endCall}
+//       />
+//     );
+//   }
+
+//   return (
+//     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans text-slate-800">
+      
+//       {['EARLY', 'ACTIVE'].includes(state) ? (
+        
+//         <div className="w-full max-w-md bg-white p-8 rounded-[28px] shadow-2xl shadow-slate-200/50 border border-slate-100 flex flex-col relative overflow-hidden animate-in zoom-in-95 duration-500">
+//           <div className="absolute top-0 inset-x-0 h-32 bg-gradient-to-b from-blue-50/80 to-transparent pointer-events-none" />
+          
+//           <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6 bg-blue-50 text-blue-500 border border-blue-100/50 shadow-inner relative z-10">
+//             <Video size={28} />
+//           </div>
+          
+//           <h1 className="text-2xl font-extrabold text-slate-900 mb-2 relative z-10">
+//             {meeting?.name || 'Join Meeting'}
+//           </h1>
+
+//           <p className="text-sm text-slate-500 font-medium mb-6 relative z-10">
+//             {state === 'EARLY' ? 'The session starts soon, but you can join early.' : 'The session is active. Enter your name to join.'}
+//           </p>
+          
+//           {error && (
+//             <div className="mb-6 p-4 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 text-sm font-medium relative z-10">
+//               {error}
+//             </div>
+//           )}
+
+//           <form onSubmit={handleJoinCall} className="flex flex-col gap-4 relative z-10 text-left w-full">
+//             <div>
+//               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+//                 Your Name
+//               </label>
+//               <input
+//                 type="text"
+//                 value={displayName}
+//                 onChange={(e) => setDisplayName(e.target.value)}
+//                 placeholder="e.g. John Doe"
+//                 className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400 text-slate-900 font-medium"
+//                 disabled={isJoining}
+//               />
+//             </div>
+
+//             <button
+//               type="submit"
+//               disabled={isJoining || !displayName.trim()}
+//               className="w-full mt-2 py-4 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[15px] font-bold shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center gap-2"
+//             >
+//               {isJoining ? (
+//                 <span className="animate-pulse">Connecting...</span>
+//               ) : (
+//                 <>Join Video Call</>
+//               )}
+//             </button>
+//           </form>
+//         </div>
+
+//       ) : state === 'PENDING' ? (
+
+//         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-500">
+//           <div className="w-full max-w-sm bg-white rounded-[28px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] overflow-hidden animate-in zoom-in-95 duration-500 relative">
+//             <div className="absolute top-0 inset-x-0 h-32 bg-gradient-to-b from-blue-50/80 to-transparent pointer-events-none" />
+            
+//             <div className="relative p-8 sm:p-10 flex flex-col items-center text-center">
+//               <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5 bg-gradient-to-br from-amber-50 to-amber-100/50 border border-amber-200/50 shadow-inner text-amber-500 relative">
+//                 <CalendarClock size={28} className="relative z-10" />
+//               </div>
+              
+//               <div className="inline-flex items-center justify-center px-3.5 py-1.5 rounded-md bg-amber-50 border border-amber-200 text-amber-600 text-[11px] font-black tracking-widest uppercase mb-4 shadow-sm">
+//                 Not Open Yet
+//               </div>
+
+//               <p className="text-[13px] font-medium text-slate-500 mb-8 px-2 leading-relaxed">
+//                 Your session hasn't opened for joining yet. Please check back a few minutes before the scheduled start time.
+//               </p>
+              
+//               <div className="w-full space-y-3">
+//                 <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col items-center">
+//                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1.5">
+//                     Your session is at
+//                   </span>
+//                   <span className="text-[22px] font-black text-slate-800 tracking-tight">
+//                     {startTime ? formatTime(startTime) : '--:--'}
+//                   </span>
+//                 </div>
+                
+//                 <div className="bg-blue-50/50 rounded-2xl p-4 border border-blue-100/50 shadow-sm flex flex-col items-center">
+//                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mb-1.5">
+//                     Starts In
+//                   </span>
+//                   <span className="text-xl font-extrabold text-blue-600 tracking-wider font-mono">
+//                     {startTime ? formatCountdown(Math.max(0, startTime.getTime() - new Date().getTime())) : '--'}
+//                   </span>
+//                 </div>
+//               </div>
+//             </div>
+//           </div>
+//         </div>
+
+//       ) : (
+
+//         /* Main Card for INVALID, EXPIRED */
+//         <div className="w-full max-w-md bg-white border border-slate-200 rounded-[28px] shadow-2xl shadow-slate-200/50 overflow-hidden relative animate-in fade-in slide-in-from-bottom-4 duration-500">
+//           <div className="h-1.5 w-full bg-slate-300" />
+          
+//           <div className="p-8 sm:p-10">
+//             <div className="flex items-center gap-2 mb-3">
+//               <div className="w-2 h-2 rounded-full bg-slate-300" />
+//               <span className="text-[10px] font-bold tracking-widest uppercase text-slate-500">
+//                 Scheduled Session
+//               </span>
+//             </div>
+
+//             <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 mb-2">
+//               {meeting ? meeting.name || 'Invalid Link' : 'Invalid Link'}
+//             </h1>
+//             <p className="text-sm text-slate-500 font-medium mb-6">
+//               {meeting ? 'Waiting for session to open...' : 'No meeting found for this ID.'}
+//             </p>
+
+//             {state === 'EXPIRED' && (
+//               <button
+//                 disabled
+//                 className="w-full mt-8 py-4 px-6 rounded-2xl text-[13px] font-bold uppercase tracking-widest bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-inner"
+//               >
+//                 Session Ended
+//               </button>
+//             )}
+            
+//             {state === 'INVALID' && (
+//               <button
+//                 disabled
+//                 className="w-full mt-8 py-4 px-6 rounded-2xl text-[13px] font-bold uppercase tracking-widest bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-inner"
+//               >
+//                 Link Not Found
+//               </button>
+//             )}
+//           </div>
+//         </div>
+//       )}
+
+//       <Modal 
+//         isOpen={!!modalObj}
+//         type={modalObj?.type || 'info'}
+//         icon={modalObj?.icon}
+//         title={modalObj?.title}
+//         msg={modalObj?.msg}
+//         actions={modalObj?.actions || []}
+//         onClose={() => setModalObj(null)}
+//       />
+//     </div>
+//   );
+// }
+
+import { useEffect, useState } from 'react';
+import { MEETINGS } from '../utils/meetings';
+import { useMeetingTimer } from '../hooks/useMeetingTimer';
+import type { MeetingState } from '../hooks/useMeetingTimer';
+import { formatTime, formatCountdown } from '../utils/formatters';
+import { Modal } from '../components/Modal';
+import { VideoCall } from '../components/VideoCall';
+import { CalendarClock, Video, PhoneOff, RefreshCw } from 'lucide-react';
+
+export function JoinCall() {
+  const [meeting, setMeeting] = useState<any | null>(null);
+  const [modalObj, setModalObj] = useState<any>(null);
+
+  // Video call state
+  const [displayName, setDisplayName] = useState('');
+  const [isJoining, setIsJoining] = useState(false);
+  const [inCall, setInCall] = useState(false);
+  const [meetingEnded, setMeetingEnded] = useState(false);
+  const [error, setError] = useState('');
+  const [meetingData, setMeetingData] = useState<any | null>(null);
+
+  // Permission state: 'checking' | 'granted' | 'denied' | 'prompt'
+  const [permissionStatus, setPermissionStatus] = useState<string>('checking');
+
+  // ── Auto-check & request permissions on page load ──
+  useEffect(() => {
+    const checkAndRequestPermissions = async () => {
+      // First, check current permission state without prompting
+      try {
+        const camPerm = await navigator.permissions.query({ name: 'camera' as PermissionName });
+        const micPerm = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+
+        if (camPerm.state === 'granted' && micPerm.state === 'granted') {
+          setPermissionStatus('granted');
+          return;
+        }
+
+        if (camPerm.state === 'denied' || micPerm.state === 'denied') {
+          setPermissionStatus('denied');
+          return;
+        }
+      } catch {
+        // permissions.query not supported in all browsers — fall through to getUserMedia
+      }
+
+      // If state is 'prompt' or query not supported, trigger the browser permission dialog
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        stream.getTracks().forEach((track) => track.stop());
+        setPermissionStatus('granted');
+      } catch (err: any) {
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          setPermissionStatus('denied');
+        } else {
+          // No device found but might have audio — try audio only
+          try {
+            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioStream.getTracks().forEach((track) => track.stop());
+            setPermissionStatus('granted'); // Audio at least works
+          } catch {
+            setPermissionStatus('denied');
+          }
+        }
+      }
+    };
+
+    checkAndRequestPermissions();
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('meetingId');
+    if (id && MEETINGS[id]) {
+      setMeeting({ id, ...MEETINGS[id] });
+    } else {
+      setTimeout(() => {
+        setModalObj({
+          type: 'error',
+          icon: <span className="text-2xl">🔗</span>,
+          title: 'Invalid Meeting Link',
+          msg: <div>No meeting found. Please check your invite link or contact the organiser.<br/><br/>A valid link looks like: <code className="bg-slate-100 text-rose-500 px-1 py-0.5 rounded">?meetingId=abc123</code></div>,
+          actions: [{ label: 'Got it', style: 'danger', fn: () => setModalObj(null) }]
+        });
+      }, 500);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      setMeetingData(null);
+    };
+  }, []);
+
+  const { state: timerState, startTime, endTime } = useMeetingTimer(meeting);
+
+  // Consider it "invalid" if no meeting is loaded yet, otherwise use timer state
+  const state: MeetingState = !meeting ? 'INVALID' : timerState;
+
+  const handleJoinCall = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!displayName.trim()) {
+      setError('Please enter your name');
+      return;
+    }
+
+    setIsJoining(true);
+    setError('');
+
+    // ── Step 1: Request camera & mic permissions ──
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: true,
+      });
+      // Got permission — stop the tracks immediately so the hook can pick its own devices
+      stream.getTracks().forEach((track) => track.stop());
+    } catch (permErr: any) {
+      // User denied or no devices available
+      if (permErr.name === 'NotAllowedError' || permErr.name === 'PermissionDeniedError') {
+        setError(
+          'Camera and microphone access is required to join the video call. Please allow access in your browser settings and try again.'
+        );
+        setIsJoining(false);
+        return;
+      }
+      // No camera but mic might work — try audio only
+      try {
+        const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStream.getTracks().forEach((track) => track.stop());
+        // Audio works, video doesn't — continue without video
+        console.warn('[Permissions] Camera not available, joining with audio only');
+      } catch {
+        setError(
+          'No camera or microphone found. Please connect a device and try again.'
+        );
+        setIsJoining(false);
+        return;
+      }
+    }
+
+    // ── Step 2: Join the meeting ──
+    const controller = new AbortController();
+    // const timeoutId = setTimeout(() => controller.abort(), 50_000);
+
+    try {
+      let response: Response;
+      try {
+        response = await fetch('http://localhost:3000/api/video/join', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ displayName: displayName.trim() }),
+          signal: controller.signal,
+        });
+      } catch (fetchError: any) {
+        // Network-level failures (offline, DNS, CORS, timeout)
+        if (fetchError.name === 'AbortError') {
+          throw new Error(
+            'The request timed out. Please check your internet connection and make sure the backend server is running.'
+          );
+        }
+        throw new Error(
+          'Could not reach the server. Please make sure the backend is running at localhost:3000.'
+        );
+      }
+
+      // Parse JSON safely
+      let data: any;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error(
+          `Server returned an unexpected response (HTTP ${response.status}). The backend may be misconfigured.`
+        );
+      }
+
+      // API-level errors
+      if (!response.ok || !data.success) {
+        const serverMessage = data?.error?.message || 'Failed to join meeting';
+        const errorCode = data?.error?.code || 'UNKNOWN';
+        const retryable = data?.error?.retryable === true;
+
+        console.error('[JOIN] Server error:', { errorCode, serverMessage, retryable });
+
+        if (retryable) {
+          throw new Error(`${serverMessage} (You can try again.)`);
+        }
+        throw new Error(serverMessage);
+      }
+
+      // Validate the meeting data we received
+      const meetingPayload = data.data;
+      if (!meetingPayload?.meeting || !meetingPayload?.attendee) {
+        throw new Error(
+          'The server returned an incomplete response — meeting or attendee data is missing. Please try again.'
+        );
+      }
+
+      setMeetingData(meetingPayload);
+      setInCall(true);
+    } catch (err: any) {
+      console.error('Error joining meeting:', err);
+      setError(err.message || 'An unexpected error occurred while joining the meeting.');
+    } finally {
+      // clearTimeout(timeoutId);
+      setIsJoining(false);
+    }
+  };
+
+  const endCall = () => {
+    setMeetingData(null);
+    setInCall(false);
+    setMeetingEnded(true);
+  };
+
+
+  // Get user-friendly message and icon based on reason
+  
+
+  // ── If the user has joined the call, show the full screen video interface ──
+  if (inCall && meetingData) {
+    return (
+      <VideoCall
+        meetingData={meetingData}
+        displayName={displayName}
+        onLeave={endCall}
+      />
+    );
+  }
+
+  // ── Meeting ended screen ──
+  if (meetingEnded) {
+
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans text-slate-800">
+        <div className="w-full max-w-md bg-white p-8 rounded-[28px] shadow-2xl shadow-slate-200/50 border border-slate-100 flex flex-col items-center text-center relative overflow-hidden animate-in zoom-in-95 duration-500">
+          <div className="absolute top-0 inset-x-0 h-32 bg-gradient-to-b from-slate-50/80 to-transparent pointer-events-none" />
+
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mb-6 border shadow-inner relative z-10 bg-red-50 border border-red-200">
+            <PhoneOff className="text-red-500" />
+          </div>
+
+
+          <h1 className="text-2xl font-extrabold text-slate-900 mb-2 relative z-10">
+            Call Ended
+          </h1>
+
+          <p className="text-sm text-slate-500 font-medium mb-8 relative z-10 leading-relaxed px-2">
+            Your session has been completed. Thank you for joining.
+          </p>
+
+          <div className="flex flex-col gap-3 w-full relative z-10">
+           
+              <button
+                onClick={() => {
+                  setMeetingEnded(false);
+                  setError('');
+                }}
+                className="w-full py-4 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[15px] font-bold shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center gap-2"
+              >
+                <RefreshCw size={16} />
+                Rejoin Meeting
+              </button>
+
+            <button
+              onClick={() => window.close()}
+              className="w-full py-4 px-6 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-[15px] font-bold transition-all border border-slate-200"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans text-slate-800">
+      
+      {['EARLY', 'ACTIVE'].includes(state) ? (
+        
+        <div className="w-full max-w-md bg-white p-8 rounded-[28px] shadow-2xl shadow-slate-200/50 border border-slate-100 flex flex-col relative overflow-hidden animate-in zoom-in-95 duration-500">
+          <div className="absolute top-0 inset-x-0 h-32 bg-gradient-to-b from-blue-50/80 to-transparent pointer-events-none" />
+          
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6 bg-blue-50 text-blue-500 border border-blue-100/50 shadow-inner relative z-10">
+            <Video size={28} />
+          </div>
+          
+          <h1 className="text-2xl font-extrabold text-slate-900 mb-2 relative z-10">
+            {meeting?.name || 'Join Meeting'}
+          </h1>
+
+          <p className="text-sm text-slate-500 font-medium mb-6 relative z-10">
+            {state === 'EARLY' ? 'The session starts soon, but you can join early.' : 'The session is active. Enter your name to join.'}
+          </p>
+          
+          {error && (
+            <div className="mb-6 p-4 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 text-sm font-medium relative z-10">
+              {error}
+            </div>
+          )}
+
+          {permissionStatus === 'denied' && (
+            <div className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200 relative z-10">
+              <p className="text-sm font-semibold text-amber-800 mb-1">Camera & microphone blocked</p>
+              <p className="text-xs text-amber-600 leading-relaxed mb-3">
+                Click the lock/settings icon in your browser's address bar, allow camera and microphone, then reload.
+              </p>
+              {/* <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="text-xs font-bold text-amber-700 underline underline-offset-2 hover:text-amber-900"
+              >
+                Reload page
+              </button> */}
+            </div>
+          )}
+
+          {permissionStatus === 'checking' && (
+            <div className="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-100 relative z-10">
+              <p className="text-sm font-medium text-blue-600 animate-pulse">
+                Requesting camera & microphone access...
+              </p>
+            </div>
+          )}
+
+          <form onSubmit={handleJoinCall} className="flex flex-col gap-4 relative z-10 text-left w-full">
+            <div>
+              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Your Name
+              </label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="e.g. John Doe"
+                className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400 text-slate-900 font-medium"
+                disabled={isJoining}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isJoining || !displayName.trim() || permissionStatus === 'denied' || permissionStatus === 'checking'}
+              className="w-full mt-2 py-4 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[15px] font-bold shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center gap-2"
+            >
+              {isJoining ? (
+                <span className="animate-pulse">Connecting...</span>
+              ) : permissionStatus === 'denied' ? (
+                <>Allow permissions to join</>
+              ) : permissionStatus === 'checking' ? (
+                <span className="animate-pulse">Checking permissions...</span>
+              ) : (
+                <>Join Video Call</>
+              )}
+            </button>
+          </form>
+        </div>
+
+      ) : state === 'PENDING' ? (
+
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-50 flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-500">
+          <div className="w-full max-w-sm bg-white rounded-[28px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] overflow-hidden animate-in zoom-in-95 duration-500 relative">
+            <div className="absolute top-0 inset-x-0 h-32 bg-gradient-to-b from-blue-50/80 to-transparent pointer-events-none" />
+            
+            <div className="relative p-8 sm:p-10 flex flex-col items-center text-center">
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5 bg-gradient-to-br from-amber-50 to-amber-100/50 border border-amber-200/50 shadow-inner text-amber-500 relative">
+                <CalendarClock size={28} className="relative z-10" />
+              </div>
+              
+              <div className="inline-flex items-center justify-center px-3.5 py-1.5 rounded-md bg-amber-50 border border-amber-200 text-amber-600 text-[11px] font-black tracking-widest uppercase mb-4 shadow-sm">
+                Not Open Yet
+              </div>
+
+              <p className="text-[13px] font-medium text-slate-500 mb-8 px-2 leading-relaxed">
+                Your session hasn't opened for joining yet. Please check back a few minutes before the scheduled start time.
+              </p>
+              
+              <div className="w-full space-y-3">
+                <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col items-center">
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1.5">
+                    Your session is at
+                  </span>
+                  <span className="text-[22px] font-black text-slate-800 tracking-tight">
+                    {startTime ? formatTime(startTime) : '--:--'}
+                  </span>
+                </div>
+                
+                <div className="bg-blue-50/50 rounded-2xl p-4 border border-blue-100/50 shadow-sm flex flex-col items-center">
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mb-1.5">
+                    Starts In
+                  </span>
+                  <span className="text-xl font-extrabold text-blue-600 tracking-wider font-mono">
+                    {startTime ? formatCountdown(Math.max(0, startTime.getTime() - new Date().getTime())) : '--'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      ) : (
+
+        /* Main Card for INVALID, EXPIRED */
+        <div className="w-full max-w-md bg-white border border-slate-200 rounded-[28px] shadow-2xl shadow-slate-200/50 overflow-hidden relative animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="h-1.5 w-full bg-slate-300" />
+          
+          <div className="p-8 sm:p-10">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-2 h-2 rounded-full bg-slate-300" />
+              <span className="text-[10px] font-bold tracking-widest uppercase text-slate-500">
+                Scheduled Session
+              </span>
+            </div>
+
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 mb-2">
+              {meeting ? meeting.name || 'Invalid Link' : 'Invalid Link'}
+            </h1>
+            <p className="text-sm text-slate-500 font-medium mb-6">
+              {meeting ? 'Waiting for session to open...' : 'No meeting found for this ID.'}
+            </p>
+
+            {state === 'EXPIRED' && (
+              <button
+                disabled
+                className="w-full mt-8 py-4 px-6 rounded-2xl text-[13px] font-bold uppercase tracking-widest bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-inner"
+              >
+                Session Ended
+              </button>
+            )}
+            
+            {state === 'INVALID' && (
+              <button
+                disabled
+                className="w-full mt-8 py-4 px-6 rounded-2xl text-[13px] font-bold uppercase tracking-widest bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-inner"
+              >
+                Link Not Found
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <Modal 
+        isOpen={!!modalObj}
+        type={modalObj?.type || 'info'}
+        icon={modalObj?.icon}
+        title={modalObj?.title}
+        msg={modalObj?.msg}
+        actions={modalObj?.actions || []}
+        onClose={() => setModalObj(null)}
+      />
+    </div>
+  );
+}
