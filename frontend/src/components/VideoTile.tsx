@@ -144,11 +144,13 @@ export function VideoTile({
       <video
         ref={videoRef}
         autoPlay
+        // style={{ transform: isLocal && !isContent ? 'scaleX(-1)' : 'none' }}
+        style={{ transform: 'none' }}
         playsInline
         muted={isLocal}
-        className={`w-full h-full object-cover transition-opacity duration-300 ${
+        className={`w-full h-full ${isContent ? 'object-contain' : 'object-cover'} transition-opacity duration-300 ${
           active ? 'opacity-100' : 'opacity-0'
-        } ${isLocal && !isContent ? 'scale-x-[-1]' : ''}`}
+        } `}
       />
 
       {/* Avatar placeholder when video is off */}
@@ -198,8 +200,8 @@ export function VideoTile({
       {isLocal && !isContent && (
         <div className="absolute top-3 right-3">
           <div className="absolute top-3 right-3 px-2 py-1 rounded-md bg-blue-500/80 backdrop-blur-sm">
-//           <span className="text-[10px] font-bold text-white uppercase tracking-wide">You</span>
-//         </div>
+          <span className="text-[10px] font-bold text-white uppercase tracking-wide">You</span>
+       </div>
         </div>
       )}
 

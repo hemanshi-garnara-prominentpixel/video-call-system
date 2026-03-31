@@ -561,7 +561,10 @@ export function JoinCall() {
               </button>
 
             <button
-              onClick={() => window.close()}
+              onClick={() => {
+              window.open('', '_self'); 
+              window.close();           
+             }}  
               className="w-full py-4 px-6 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-[15px] font-bold transition-all border border-slate-200"
             >
               Close
