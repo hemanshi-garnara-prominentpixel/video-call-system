@@ -286,13 +286,15 @@ export function JoinCall() {
       //     </div>
       //   </div>
       // </div>
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans text-slate-800">
 
       <Modal variant="red" overlay={false} icon={<PhoneOff />}
         title="Call Ended" msg="Your session has been completed. Thank you for joining."
         actions={[
           { label: 'Rejoin Meeting', style: 'primary', icon: <RefreshCw size={16} />, onClick: () => { setMeetingEnded(false); setError(''); } },
-          { label: 'Close', style: 'secondary', onClick: () => { window.open('', '_self'); window.close(); } },
+          // { label: 'Close', style: 'secondary', onClick: () => { window.open('', '_self'); window.close(); } },
         ]} />
+        </div>
     );
   }
 
