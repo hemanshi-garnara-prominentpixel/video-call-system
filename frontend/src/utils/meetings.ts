@@ -6,11 +6,11 @@ export interface Meeting {
 
 export const MEETINGS: Record<string, Omit<Meeting, "id">> = {
   abc123: {
-    start: new Date(Date.now() + 1 * 60000).toISOString(), // 10 minutes from now (for testing)
-    end: new Date(Date.now() + 1 * 1000).toISOString(),
+    start: "2026-04-01T10:00:00+05:30",
+    end: "2026-04-01T10:59:00+05:30",
   },
   xyz789: {
-    start: new Date(Date.now() + 60 * 60000).toISOString(),
+    start: new Date(Date.now() + 5 * 60000).toISOString(),
     end: new Date(Date.now() + 120 * 60000).toISOString(),
   },
 };
