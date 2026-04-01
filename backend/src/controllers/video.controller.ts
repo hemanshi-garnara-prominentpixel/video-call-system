@@ -5,38 +5,7 @@ import { Request, Response } from 'express';
 import { videoService, VideoServiceError } from '../services/video.service';
 
 export class VideoController {
-  /**
-   * POST /api/video/join
-   *
-   * Called when user clicks "Join" button.
-   * Takes displayName from request body.
-   *
-   * Request:
-   * {
-   *   "displayName": "John Doe"
-   * }
-   *
-   * Response (success):
-   * {
-   *   "success": true,
-   *   "data": {
-   *     "contactId": "xxx",
-   *     "participantToken": "xxx",
-   *     "meeting": { ... },
-   *     "attendee": { ... }
-   *   }
-   * }
-   *
-   * Response (error):
-   * {
-   *   "success": false,
-   *   "error": {
-   *     "code": "SERVICE_ERROR",
-   *     "message": "Human-readable error message",
-   *     "retryable": false
-   *   }
-   * }
-   */
+
   async joinVideoCall(req: Request, res: Response): Promise<void> {
     try {
       const { displayName } = req.body;
@@ -119,6 +88,59 @@ export class VideoController {
       service: 'video-call-service',
       timestamp: new Date().toISOString(),
     });
+  }
+
+  /**
+   * GET /api/video/disconnect-reason?contactId=xxx
+   * Returns the disconnect reason by polling DescribeContact.
+   */
+  async getDisconnectReason(req: Request, res: Response): Promise<void> {
+    try {
+      const contactId = req.query.contactId as string;
+      if (!contactId) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_INPUT',
+            message: 'contactId is required',
+            retryable: false,
+          },
+        });
+        return;
+      }
+
+      console.log(`[CONTROLLER] Fetching disconnect reason for: ${contactId}`);
+      const data = await videoService.getDisconnectReason(contactId);
+
+      res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error: any) {
+      console.error('[CONTROLLER] getDisconnectReason Error:', error);
+
+      if (error instanceof VideoServiceError) {
+        res.status(error.statusCode).json({
+          success: false,
+          error: {
+            code: error.code,
+            message: error.message,
+            retryable: false,
+            ...(error.details ? { details: error.details } : {}),
+          },
+        });
+        return;
+      }
+
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: error.message || 'An unexpected error occurred.',
+          retryable: false,
+        },
+      });
+    }
   }
 }
 

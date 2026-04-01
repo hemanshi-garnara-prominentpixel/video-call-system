@@ -5,7 +5,8 @@ import type { MeetingState } from '../hooks/useMeetingTimer';
 import { formatTime, formatCountdown } from '../utils/formatters';
 import { Modal } from '../components/Modal';
 import { VideoCall } from '../components/VideoCall';
-import { CalendarClock, Video,Link, PhoneOff, RefreshCw, Loader2 } from 'lucide-react';
+import { CalendarClock, Video,Link, PhoneOff, RefreshCw, Loader2, WifiOff, UserX } from 'lucide-react';
+import { type CallEndReason } from '../hooks/useChimeMeeting';
 
 export function JoinCall() {
   const [meeting, setMeeting] = useState<any | null>(null);
@@ -15,6 +16,7 @@ export function JoinCall() {
   const [isJoining, setIsJoining] = useState(false);
   const [inCall, setInCall] = useState(false);
   const [meetingEnded, setMeetingEnded] = useState(false);
+  const [callEndReason, setCallEndReason] = useState<CallEndReason>(null);
   const [error, setError] = useState('');
   const [meetingData, setMeetingData] = useState<any | null>(null);
 
@@ -201,7 +203,8 @@ export function JoinCall() {
     }
   };
 
-  const endCall = () => {
+  const endCall = (reason?: CallEndReason) => {
+    setCallEndReason(reason || 'CLEAN');
     setMeetingData(null);
     setInCall(false);
     setMeetingEnded(true);
@@ -243,58 +246,37 @@ export function JoinCall() {
 
   // ── 3. Post-Call Screen ──────────────────────────────
   if (meetingEnded) {
+    const isNetworkError = callEndReason === 'AGENT_NETWORK' || callEndReason === 'CUSTOMER_NETWORK';
+    const agentNeverJoined = callEndReason === 'AGENT_NEVER_JOINED';
+
+    const title = isNetworkError ? "Connection Interrupted" : "Call Ended";
+    const msg = isNetworkError
+      ? "The call was interrupted due to a network issue. You can rejoin to reconnect."
+      : agentNeverJoined
+        ? "The agent is currently unavailable. Please try again after some time."
+        : "Your session has been completed. Thank you for joining.";
+    
+    // We conditionally use a different icon based on the state
+    const IconCmp = isNetworkError ? <WifiOff size={28} /> : agentNeverJoined ? <UserX size={28} /> : <PhoneOff size={28} />;
+
     return (
-      // <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans text-slate-800">
-      //   <div className="w-full max-w-md bg-white p-8 rounded-[28px] shadow-2xl shadow-slate-200/50 border border-slate-100 flex flex-col items-center text-center relative overflow-hidden animate-in zoom-in-95 duration-500">
-      //     <div className="absolute top-0 inset-x-0 h-32 bg-gradient-to-b from-slate-50/80 to-transparent pointer-events-none" />
-
-      //     <div className="w-16 h-16 rounded-full flex items-center justify-center mb-6 border shadow-inner relative z-10 bg-red-50 border border-red-200">
-      //       <PhoneOff className="text-red-500" />
-      //     </div>
-
-
-      //     <h1 className="text-2xl font-extrabold text-slate-900 mb-2 relative z-10">
-      //       Call Ended
-      //     </h1>
-
-      //     <p className="text-sm text-slate-500 font-medium mb-8 relative z-10 leading-relaxed px-2">
-      //       Your session has been completed. Thank you for joining.
-      //     </p>
-
-      //     <div className="flex flex-col gap-3 w-full relative z-10">
-           
-      //         <button
-      //           onClick={() => {
-      //             setMeetingEnded(false);
-      //             setError('');
-      //           }}
-      //           className="w-full py-4 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[15px] font-bold shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center gap-2"
-      //         >
-      //           <RefreshCw size={16} />
-      //           Rejoin Meeting
-      //         </button>
-
-      //       <button
-      //         onClick={() => {
-      //         window.open('', '_self'); 
-      //         window.close();           
-      //        }}  
-      //         className="w-full py-4 px-6 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-[15px] font-bold transition-all border border-slate-200"
-      //       >
-      //         Close
-      //       </button>
-      //     </div>
-      //   </div>
-      // </div>
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans text-slate-800">
-
-      <Modal variant="red" overlay={false} icon={<PhoneOff />}
-        title="Call Ended" msg="Your session has been completed. Thank you for joining."
-        actions={[
-          { label: 'Rejoin Meeting', style: 'primary', icon: <RefreshCw size={16} />, onClick: () => { setMeetingEnded(false); setError(''); } },
-          // { label: 'Close', style: 'secondary', onClick: () => { window.open('', '_self'); window.close(); } },
-        ]} />
-        </div>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans text-slate-800">
+        <Modal 
+          variant={isNetworkError ? "amber" : "red"} 
+          overlay={false} 
+          icon={IconCmp}
+          title={title} 
+          msg={msg}
+          // actions={[
+          //   { 
+          //     label: isNetworkError ? 'Rejoin Meeting' : 'Go Back', 
+          //     style: 'primary', 
+          //     icon: <RefreshCw size={16} />, 
+          //     onClick: () => { setMeetingEnded(false); setError(''); } 
+          //   },
+          // ]} 
+        />
+      </div>
     );
   }
 
