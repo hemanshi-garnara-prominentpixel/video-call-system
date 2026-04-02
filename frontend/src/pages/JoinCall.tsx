@@ -15,6 +15,7 @@ export function JoinCall() {
   const [isJoining, setIsJoining] = useState(false);
   const [inCall, setInCall] = useState(false);
   const [meetingEnded, setMeetingEnded] = useState(false);
+  const [meetingEndedReason, setMeetingEndedReason] = useState<'CleanExit' | 'NetworkError' | 'AgentNetworkError' | 'CustomerNetworkError' | null>(null);
   const [error, setError] = useState('');
   const [meetingData, setMeetingData] = useState<any | null>(null);
 
@@ -201,9 +202,10 @@ export function JoinCall() {
     }
   };
 
-  const endCall = () => {
+  const endCall = (reason: 'CleanExit' | 'NetworkError' | 'AgentNetworkError' | 'CustomerNetworkError' = 'CleanExit') => {
     setMeetingData(null);
     setInCall(false);
+    setMeetingEndedReason(reason);
     setMeetingEnded(true);
   };
 
@@ -250,15 +252,27 @@ export function JoinCall() {
           overlay={false} 
           icon={<PhoneOff />}
           title="Call Ended" 
-          msg="Your session has been completed. Thank you for joining."
-          actions={[
-            { 
-              label: 'Rejoin Meeting', 
-              style: 'primary', 
-              icon: <RefreshCw size={16} />, 
-              onClick: () => { setMeetingEnded(false); setError(''); } 
-            },
-          ]} 
+          msg={
+            meetingEndedReason === 'AgentNetworkError' ? "The agent was disconnected due to a network issue." :
+            meetingEndedReason === 'CustomerNetworkError' ? "Your session ended due to your poor network connection." :
+            "Your session has been completed. Thank you for joining."
+          }
+          actions={
+            (meetingEndedReason === 'NetworkError' || meetingEndedReason === 'AgentNetworkError' || meetingEndedReason === 'CustomerNetworkError')
+              ? [
+                  { 
+                    label: 'Rejoin Meeting', 
+                    style: 'primary', 
+                    icon: <RefreshCw size={16} />, 
+                    onClick: () => { 
+                      setMeetingEnded(false); 
+                      setMeetingEndedReason(null);
+                      setError(''); 
+                    } 
+                  },
+                ] 
+              : undefined
+          } 
         />
       </div>
     );

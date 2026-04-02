@@ -6,8 +6,8 @@ export interface Meeting {
 
 export const MEETINGS: Record<string, Omit<Meeting, "id">> = {
   abc123: {
-    start: "2026-04-01T12:36:00+05:30",
-    end: "2026-04-01T014:59:00+05:30",
+    start: "2026-04-02T15:30:00+05:30",
+    end: "2026-04-02T15:59:00+05:30",
   },
   xyz789: {
     start: new Date(Date.now() + 5 * 60000).toISOString(),

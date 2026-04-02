@@ -25,7 +25,7 @@ interface UseChimeMeetingProps {
     meeting: any;
     attendee: any;
   } | null;
-  onMeetingEnd?: () => void;
+  onMeetingEnd?: (reason: 'CleanExit' | 'NetworkError' | 'AgentNetworkError' | 'CustomerNetworkError') => void;
 }
 
 export function useChimeMeeting({ meetingData, onMeetingEnd }: UseChimeMeetingProps) {
@@ -38,9 +38,17 @@ export function useChimeMeeting({ meetingData, onMeetingEnd }: UseChimeMeetingPr
   const [tiles, setTiles] = useState<TileInfo[]>([]);
   const [remoteAttendeeIds, setRemoteAttendeeIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isNetworkPoor, setIsNetworkPoor] = useState(false);
+  const [agentNetworkPoor, setAgentNetworkPoor] = useState(false);
+  const [hasJoined, setHasJoined] = useState(false);
 
   // ── FIX 1: Track our attendee ID to detect override ──
   const localAttendeeIdRef = useRef<string | null>(null);
+  const agentNetworkPoorRef = useRef(false);
+  const agentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const customerNetworkPoorRef = useRef(false);
+  const recentSevereDropRef = useRef(false);
+  const hasJoinedRef = useRef(false);
 
   // ── FIX 2: Ref stays in sync so toggleScreenShare never has stale closure ──
   const isScreenSharingRef = useRef(false);
@@ -53,6 +61,26 @@ export function useChimeMeeting({ meetingData, onMeetingEnd }: UseChimeMeetingPr
     if (!meetingData) return;
 
     let cancelled = false;
+
+    const handleOffline = () => {
+      if (!cancelled) {
+        setIsNetworkPoor(true);
+        customerNetworkPoorRef.current = true;
+      }
+    };
+    const handleOnline = () => {
+      if (!cancelled) {
+        setIsNetworkPoor(false);
+        customerNetworkPoorRef.current = false;
+        
+        // Mark a 10-second grace period. If a terminal packet arrives right after 
+        // we reconnect to internet, it was caused by this network drop!
+        recentSevereDropRef.current = true;
+        setTimeout(() => { recentSevereDropRef.current = false; }, 10_000);
+      }
+    };
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
 
     const startMeeting = async () => {
       setIsConnecting(true);
@@ -82,11 +110,50 @@ export function useChimeMeeting({ meetingData, onMeetingEnd }: UseChimeMeetingPr
 
         // ── Audio/Video Observer ──────────────────────────────
         const observer: AudioVideoObserver = {
-          audioVideoDidStart: () => {
+          connectionDidBecomePoor: () => {
+            if (cancelled) return;
+            console.warn('[Chime] Connection became poor');
+            setIsNetworkPoor(true);
+            customerNetworkPoorRef.current = true;
+          },
+          connectionDidBecomeGood: () => {
+            if (cancelled) return;
+            console.log('[Chime] Connection became good');
+            setIsNetworkPoor(false);
+            customerNetworkPoorRef.current = false;
+
+            // Grace period in case the server just terminated the meeting 
+            // and the termination packet was queued right behind the reconnection packet.
+            recentSevereDropRef.current = true;
+            setTimeout(() => { recentSevereDropRef.current = false; }, 10_000);
+          },
+          audioVideoDidStart: async () => {
             if (cancelled) return;
             console.log('[Chime] Meeting session started');
             setIsConnected(true);
             setIsConnecting(false);
+            
+            if (hasJoinedRef.current) {
+              console.log('[Chime] Reconnected. Re-binding audio devices...');
+              try {
+                const session = meetingSessionRef.current;
+                if (session) {
+                  const audioInputs = await session.audioVideo.listAudioInputDevices();
+                  if (audioInputs.length > 0) {
+                    await session.audioVideo.startAudioInput(audioInputs[0].deviceId);
+                  }
+                  // We could reset video here but user says video works.
+                  // Just resetting audio ensures mic flows.
+                }
+              } catch (e) {
+                console.warn('[Chime] Failed to re-bind audio devices on reconnect:', e);
+              }
+            } else {
+              setHasJoined(true);
+              hasJoinedRef.current = true;
+            }
+            
+            setIsNetworkPoor(false); // Reset network state on fresh start
           },
 
           audioVideoDidStop: async(sessionStatus) => {
@@ -104,7 +171,19 @@ export function useChimeMeeting({ meetingData, onMeetingEnd }: UseChimeMeetingPr
             setIsScreenSharing(false);
 
             if (sessionStatus.isTerminal()) {
-              onMeetingEnd?.();
+              if (agentNetworkPoorRef.current) {
+                onMeetingEnd?.('AgentNetworkError');
+              } else if (customerNetworkPoorRef.current || recentSevereDropRef.current) {
+                onMeetingEnd?.('CustomerNetworkError');
+              } else {
+                // 1 = Left, 5 = MeetingEnded, 21 = NoAttendeePresent, 22 = AudioAttendeeRemoved
+                const isCleanExit = code === 1 || code === 5 || code === 21 || code === 22;
+                onMeetingEnd?.(isCleanExit ? 'CleanExit' : 'NetworkError');
+              }
+            } else {
+              // Non-terminal (e.g. temporary network drop) -> auto-reconnecting
+              setIsNetworkPoor(true);
+              customerNetworkPoorRef.current = true;
             }
           },
 
@@ -179,11 +258,71 @@ export function useChimeMeeting({ meetingData, onMeetingEnd }: UseChimeMeetingPr
 
         // ── Real-time Presence Subscription ─────────────────
         meetingSession.audioVideo.realtimeSubscribeToAttendeeIdPresence(
-          (attendeeId, present) => {
+          (attendeeId, present, _externalUserId, dropped) => {
             if (cancelled) return;
             const localId = localAttendeeIdRef.current;
             // Ignore ourselves and content shares
             if (attendeeId === localId || attendeeId.endsWith('#content')) return;
+
+            if (!present && dropped) {
+              setAgentNetworkPoor(true);
+              agentNetworkPoorRef.current = true;
+
+              // Start 1-minute timer to disconnect if agent doesn't return
+              if (!agentTimeoutRef.current) {
+                agentTimeoutRef.current = setTimeout(() => {
+                  console.warn('[Chime] Agent dropped for more than 1 minute. Ending call.');
+                  const session = meetingSessionRef.current;
+                  if (session) {
+                    try {
+                      session.audioVideo.stopContentShare();
+                      session.audioVideo.stopLocalVideoTile();
+                      session.audioVideo.stop();
+                    } catch {}
+                    meetingSessionRef.current = null;
+                  }
+                  setIsConnected(false);
+                  setIsScreenSharing(false);
+                  setTiles([]);
+                  onMeetingEnd?.('AgentNetworkError');
+                }, 60_000); // 1 minute
+              }
+            } else if (present) {
+              const recoveredFromPoor = agentNetworkPoorRef.current;
+              setAgentNetworkPoor(false);
+              agentNetworkPoorRef.current = false;
+              
+              if (agentTimeoutRef.current) {
+                clearTimeout(agentTimeoutRef.current);
+                agentTimeoutRef.current = null;
+              }
+
+              // WORKAROUND: If the agent experienced a hard refresh/reconnect, the Chime SFU may 
+              // stall the audio pipeline. We force-restart the local microphone and output 
+              // streams to renegotiate the tracks and wake up the incoming/outgoing audio.
+              if (recoveredFromPoor) {
+                console.log('[Chime] Agent rejoined. Kick-starting audio devices...');
+                (async () => {
+                  try {
+                    const session = meetingSessionRef.current;
+                    if (!session) return;
+                    
+                    const audioInputs = await session.audioVideo.listAudioInputDevices();
+                    if (audioInputs.length > 0) {
+                      await session.audioVideo.startAudioInput(audioInputs[0].deviceId);
+                    }
+                    const audioOutputs = await session.audioVideo.listAudioOutputDevices();
+                    if (audioOutputs.length > 0) {
+                      await session.audioVideo.chooseAudioOutput(audioOutputs[0].deviceId);
+                    }
+                    // Re-assert unmute state
+                    session.audioVideo.realtimeUnmuteLocalAudio();
+                  } catch (e) {
+                    console.warn('[Chime] Failed to kickstart audio:', e);
+                  }
+                })();
+              }
+            }
 
             setRemoteAttendeeIds((prev) => {
               if (present) {
@@ -249,9 +388,21 @@ export function useChimeMeeting({ meetingData, onMeetingEnd }: UseChimeMeetingPr
         }
         meetingSessionRef.current = null;
       }
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
       setIsConnected(false);
       setIsConnecting(false);
       setIsScreenSharing(false);
+      setIsNetworkPoor(false);
+      customerNetworkPoorRef.current = false;
+      setAgentNetworkPoor(false);
+      agentNetworkPoorRef.current = false;
+      hasJoinedRef.current = false;
+      setHasJoined(false);
+      if (agentTimeoutRef.current) {
+        clearTimeout(agentTimeoutRef.current);
+        agentTimeoutRef.current = null;
+      }
       setTiles([]);
       setRemoteAttendeeIds([]);
     };
@@ -336,7 +487,11 @@ export function useChimeMeeting({ meetingData, onMeetingEnd }: UseChimeMeetingPr
     setIsConnected(false);
     setIsScreenSharing(false);
     setTiles([]);
-    onMeetingEnd?.();
+    if (agentNetworkPoorRef.current) {
+      onMeetingEnd?.('AgentNetworkError');
+    } else {
+      onMeetingEnd?.('CleanExit');
+    }
   }, [onMeetingEnd]);
 
   return {
@@ -345,6 +500,9 @@ export function useChimeMeeting({ meetingData, onMeetingEnd }: UseChimeMeetingPr
     isMuted,
     isVideoOn,
     isScreenSharing,
+    isNetworkPoor,
+    agentNetworkPoor,
+    hasJoined,
     tiles,
     remoteAttendeeIds,
     error,
