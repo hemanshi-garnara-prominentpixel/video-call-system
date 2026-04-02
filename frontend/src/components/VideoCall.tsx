@@ -9,17 +9,16 @@ import {
   MonitorOff,
   Loader2,
 } from 'lucide-react';
-import { useChimeMeeting, type CallEndReason } from '../hooks/useChimeMeeting';
+import { useChimeMeeting } from '../hooks/useChimeMeeting';
 import { VideoTile } from './VideoTile';
 
 interface VideoCallProps {
   meetingData: {
-    contactId?: string;
     meeting: any;
     attendee: any;
   };
   displayName: string;
-  onLeave: (reason?: CallEndReason) => void;
+  onLeave: () => void;
 }
 
 export function VideoCall({ meetingData, displayName, onLeave }: VideoCallProps) {
@@ -28,7 +27,6 @@ export function VideoCall({ meetingData, displayName, onLeave }: VideoCallProps)
   const {
     isConnected,
     isConnecting,
-    isMeetingEnded,
     isMuted,
     isVideoOn,
     isScreenSharing,
@@ -41,17 +39,10 @@ export function VideoCall({ meetingData, displayName, onLeave }: VideoCallProps)
     toggleVideo,
     toggleScreenShare,
     leaveMeeting,
-    callEndReason,
   } = useChimeMeeting({
     meetingData,
+    onMeetingEnd: onLeave,
   });
-
-  // Once meeting has ended and we have the disconnect reason from backend, leave
-  useEffect(() => {
-    if (callEndReason !== null) {
-      onLeave(callEndReason);
-    }
-  }, [callEndReason, onLeave]);
 
   // Bind audio element once connected
   useEffect(() => {
@@ -69,19 +60,19 @@ export function VideoCall({ meetingData, displayName, onLeave }: VideoCallProps)
   const activeContentTile = contentTiles.length > 0 ? contentTiles[contentTiles.length - 1] : null;
   const hasContentShare = activeContentTile !== null;
 
-  if (isConnecting || !isConnected || isMeetingEnded) {
+  if (isConnecting || !isConnected) {
     return (
       <div className="fixed inset-0 bg-slate-900 flex items-center justify-center z-50">
         <div className="text-center">
           <Loader2 size={40} className="text-blue-400 animate-spin mx-auto mb-4" />
           <p className="text-white text-lg font-semibold">
-            {error ? 'Connection failed' : isMeetingEnded ? 'Finalizing session...' : 'Connecting to meeting...'}
+            {error ? 'Connection failed' : 'Connecting to meeting...'}
           </p>
           {error && (
             <div className="mt-4 max-w-sm mx-auto px-4">
               <p className="text-red-400 text-sm mb-4">{error}</p>
               <button
-                onClick={() => onLeave('CLEAN')}
+                onClick={onLeave}
                 className="px-6 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium transition-colors"
               >
                 Go Back

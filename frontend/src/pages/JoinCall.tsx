@@ -5,8 +5,7 @@ import type { MeetingState } from '../hooks/useMeetingTimer';
 import { formatTime, formatCountdown } from '../utils/formatters';
 import { Modal } from '../components/Modal';
 import { VideoCall } from '../components/VideoCall';
-import { CalendarClock, Video,Link, PhoneOff, RefreshCw, Loader2, WifiOff, UserX } from 'lucide-react';
-import { type CallEndReason } from '../hooks/useChimeMeeting';
+import { CalendarClock, Video,Link, PhoneOff, RefreshCw, Loader2 } from 'lucide-react';
 
 export function JoinCall() {
   const [meeting, setMeeting] = useState<any | null>(null);
@@ -16,7 +15,6 @@ export function JoinCall() {
   const [isJoining, setIsJoining] = useState(false);
   const [inCall, setInCall] = useState(false);
   const [meetingEnded, setMeetingEnded] = useState(false);
-  const [callEndReason, setCallEndReason] = useState<CallEndReason>(null);
   const [error, setError] = useState('');
   const [meetingData, setMeetingData] = useState<any | null>(null);
 
@@ -203,8 +201,7 @@ export function JoinCall() {
     }
   };
 
-  const endCall = (reason?: CallEndReason) => {
-    setCallEndReason(reason || 'CLEAN');
+  const endCall = () => {
     setMeetingData(null);
     setInCall(false);
     setMeetingEnded(true);
@@ -246,35 +243,22 @@ export function JoinCall() {
 
   // ── 3. Post-Call Screen ──────────────────────────────
   if (meetingEnded) {
-    const isNetworkError = callEndReason === 'AGENT_NETWORK' || callEndReason === 'CUSTOMER_NETWORK';
-    const agentNeverJoined = callEndReason === 'AGENT_NEVER_JOINED';
-
-    const title = isNetworkError ? "Connection Interrupted" : "Call Ended";
-    const msg = isNetworkError
-      ? "The call was interrupted due to a network issue. You can rejoin to reconnect."
-      : agentNeverJoined
-        ? "The agent is currently unavailable. Please try again after some time."
-        : "Your session has been completed. Thank you for joining.";
-    
-    // We conditionally use a different icon based on the state
-    const IconCmp = isNetworkError ? <WifiOff size={28} /> : agentNeverJoined ? <UserX size={28} /> : <PhoneOff size={28} />;
-
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans text-slate-800">
         <Modal 
-          variant={isNetworkError ? "amber" : "red"} 
+          variant="red" 
           overlay={false} 
-          icon={IconCmp}
-          title={title} 
-          msg={msg}
-          // actions={[
-          //   { 
-          //     label: isNetworkError ? 'Rejoin Meeting' : 'Go Back', 
-          //     style: 'primary', 
-          //     icon: <RefreshCw size={16} />, 
-          //     onClick: () => { setMeetingEnded(false); setError(''); } 
-          //   },
-          // ]} 
+          icon={<PhoneOff />}
+          title="Call Ended" 
+          msg="Your session has been completed. Thank you for joining."
+          actions={[
+            { 
+              label: 'Rejoin Meeting', 
+              style: 'primary', 
+              icon: <RefreshCw size={16} />, 
+              onClick: () => { setMeetingEnded(false); setError(''); } 
+            },
+          ]} 
         />
       </div>
     );

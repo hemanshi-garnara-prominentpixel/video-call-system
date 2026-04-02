@@ -68,11 +68,4 @@ videoRouter.post('/join', (req: Request, res: Response) => {
   videoController.joinVideoCall(req, res);
 });
 
-/**
- * GET /api/video/disconnect-reason
- */
-videoRouter.get('/disconnect-reason', (req: Request, res: Response) => {
-  videoController.getDisconnectReason(req, res);
-});
-
 export default videoRouter;

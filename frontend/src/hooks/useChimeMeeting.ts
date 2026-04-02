@@ -20,28 +20,24 @@ export interface TileInfo {
 }
 
 
-export type CallEndReason = 'AGENT_NETWORK' | 'CUSTOMER_NETWORK' | 'CLEAN' | 'AGENT_NEVER_JOINED' | null;
-
 interface UseChimeMeetingProps {
   meetingData: {
-    contactId?: string;
     meeting: any;
     attendee: any;
   } | null;
+  onMeetingEnd?: () => void;
 }
 
-export function useChimeMeeting({ meetingData }: UseChimeMeetingProps) {
+export function useChimeMeeting({ meetingData, onMeetingEnd }: UseChimeMeetingProps) {
   const meetingSessionRef = useRef<DefaultMeetingSession | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [isMeetingEnded, setIsMeetingEnded] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [tiles, setTiles] = useState<TileInfo[]>([]);
   const [remoteAttendeeIds, setRemoteAttendeeIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [callEndReason, setCallEndReason] = useState<CallEndReason>(null);
 
   // ── FIX 1: Track our attendee ID to detect override ──
   const localAttendeeIdRef = useRef<string | null>(null);
@@ -108,38 +104,7 @@ export function useChimeMeeting({ meetingData }: UseChimeMeetingProps) {
             setIsScreenSharing(false);
 
             if (sessionStatus.isTerminal()) {
-              setIsMeetingEnded(true);
-              if (meetingData?.contactId) {
-                try {
-                  console.log('[Chime] Fetching disconnect reason for:', meetingData.contactId);
-                  const res = await fetch(`http://localhost:3000/api/video/disconnect-reason?contactId=${meetingData.contactId}`);
-                  const json = await res.json();
-
-                  if (!cancelled) {
-                    if (json.success && json.data) {
-                      const { reason, agentConnected } = json.data;
-                      if (!agentConnected) {
-                        setCallEndReason('AGENT_NEVER_JOINED');
-                      } else if (reason === 'AGENT_CONNECTIVITY_ISSUE') {
-                        setCallEndReason('AGENT_NETWORK');
-                      } else if (reason === 'CUSTOMER_CONNECTIVITY_ISSUE') {
-                        setCallEndReason('CUSTOMER_NETWORK');
-                      } else {
-                        setCallEndReason('CLEAN');
-                      }
-                    } else {
-                      setCallEndReason('CLEAN');
-                    }
-                  }
-                } catch (err) {
-                  if (!cancelled) {
-                    console.error('[Chime] Failed to fetch disconnect reason:', err);
-                    setCallEndReason('CLEAN');
-                  }
-                }
-              } else {
-                if (!cancelled) setCallEndReason('CLEAN');
-              }
+              onMeetingEnd?.();
             }
           },
 
@@ -286,7 +251,6 @@ export function useChimeMeeting({ meetingData }: UseChimeMeetingProps) {
       }
       setIsConnected(false);
       setIsConnecting(false);
-      setIsMeetingEnded(false);
       setIsScreenSharing(false);
       setTiles([]);
       setRemoteAttendeeIds([]);
@@ -372,13 +336,12 @@ export function useChimeMeeting({ meetingData }: UseChimeMeetingProps) {
     setIsConnected(false);
     setIsScreenSharing(false);
     setTiles([]);
-    // Rather than immediately calling onMeetingEnd, wait for audioVideoDidStop to fetch reason
-  }, []);
+    onMeetingEnd?.();
+  }, [onMeetingEnd]);
 
   return {
     isConnected,
     isConnecting,
-    isMeetingEnded,
     isMuted,
     isVideoOn,
     isScreenSharing,
@@ -391,6 +354,5 @@ export function useChimeMeeting({ meetingData }: UseChimeMeetingProps) {
     toggleVideo,
     toggleScreenShare,
     leaveMeeting,
-    callEndReason,
   };
 }

@@ -1,7 +1,6 @@
 import {
   ConnectClient,
   StartWebRTCContactCommand,
-  DescribeContactCommand,
 } from '@aws-sdk/client-connect';
 import { envConfig } from '../config/env';
 import {
@@ -251,77 +250,6 @@ export class VideoService {
     } catch (error) {
       console.error('[VIDEO] Error disconnecting client:', error);
     }
-  }
-
-  async getDisconnectReason(contactId: string) {
-    if (!contactId) {
-      throw new VideoServiceError('contactId is required', 'INVALID_INPUT', 400);
-    }
-
-    const maxRetries = 5;
-    const retryIntervalMs = 2000;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`[VIDEO] Get disconnect reason: ${contactId}, attempt: ${attempt}`);
-        const response = await this.connectClient.send(
-          new DescribeContactCommand({
-            InstanceId: envConfig.connect.instanceId,
-            ContactId: contactId,
-          }),
-        );
-
-        const contact = response.Contact;
-        if (!contact) {
-          throw new VideoServiceError('Contact not found', 'RESOURCE_NOT_FOUND', 404);
-        }
-
-        // AWS Connect WebRTC reason can be in PotentialDisconnectIssue or DisconnectReason
-        const rawIssue = contact.DisconnectDetails?.PotentialDisconnectIssue || contact.DisconnectReason;
-
-        // Poll if not disconnected, or if the reason hasn't finished propagating yet
-        if (!contact.DisconnectTimestamp || !rawIssue) {
-          if (attempt < maxRetries) {
-            console.log(`[VIDEO] Waiting for DisconnectReason... (attempt ${attempt}/${maxRetries})`);
-            await new Promise((resolve) => setTimeout(resolve, retryIntervalMs));
-            continue;
-          }
-        }
-
-        const agentConnected = !!contact.AgentInfo?.ConnectedToAgentTimestamp;
-        const disconnectTimestamp = contact.DisconnectTimestamp?.toISOString() || null;
-        
-        console.log(`[VIDEO] Raw Disconnect Issue/Reason for ${contactId}: "${rawIssue}" | agentConnected: ${agentConnected}`);
-
-        let reason: 'AGENT_CONNECTIVITY_ISSUE' | 'CUSTOMER_CONNECTIVITY_ISSUE' | 'CLEAN_DISCONNECT' = 'CLEAN_DISCONNECT';
-        
-        if (rawIssue === 'AGENT_CONNECTIVITY_ISSUE') {
-          reason = 'AGENT_CONNECTIVITY_ISSUE';
-        } else if (rawIssue === 'CUSTOMER_CONNECTIVITY_ISSUE') {
-          reason = 'CUSTOMER_CONNECTIVITY_ISSUE';
-        }
-
-        return {
-          reason,
-          agentConnected,
-          disconnectTimestamp,
-        };
-      } catch (error: any) {
-        if (error.name === 'ResourceNotFoundException') {
-          throw new VideoServiceError('Contact not found', 'RESOURCE_NOT_FOUND', 404);
-        }
-        if (attempt === maxRetries) {
-          throw new VideoServiceError(error.message, 'AWS_ERROR', 500);
-        }
-        await new Promise((resolve) => setTimeout(resolve, retryIntervalMs));
-      }
-    }
-
-    return {
-      reason: 'CLEAN_DISCONNECT' as const,
-      agentConnected: false,
-      disconnectTimestamp: null,
-    };
   }
 }
 
