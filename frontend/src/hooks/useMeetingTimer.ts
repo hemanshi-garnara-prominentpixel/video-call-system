@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { EARLY_JOIN_MIN } from '../utils/meetings';
+import { EARLY_JOIN_MIN } from '../types';
 
 export type MeetingState = 'LOADING' | 'PENDING' | 'EARLY' | 'ACTIVE' | 'EXPIRED' | 'INVALID';
 

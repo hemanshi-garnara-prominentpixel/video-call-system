@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { MEETINGS } from '../utils/meetings';
+import apiClient from '../api/apiClient';
 import { useMeetingTimer } from '../hooks/useMeetingTimer';
 import type { MeetingState } from '../hooks/useMeetingTimer';
 import { formatTime, formatCountdown } from '../utils/formatters';
 import { Modal } from '../components/Modal';
 import { VideoCall } from '../components/VideoCall';
-import { CalendarClock, Video,Link, PhoneOff, RefreshCw, Loader2 } from 'lucide-react';
+import { CalendarClock, Video,Link, PhoneOff, RefreshCw, WifiOff } from 'lucide-react';
 
 export function JoinCall() {
   const [meeting, setMeeting] = useState<any | null>(null);
@@ -71,9 +71,44 @@ export function JoinCall() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const id = params.get('meetingId');
-    if (id && MEETINGS[id]) {
-      setMeeting({ id, ...MEETINGS[id] });
-      setIsInitialCheck(false);
+    if (id) {
+      const fetchMeeting = async () => {
+        try {
+          const response = await apiClient.get(`/appointments/${id}`);
+          const data = response.data;
+          
+          // Convert DynamoDB format (2026-04-06, 1230) to Date objects
+          // Assuming the format is YYYY-MM-DD and HHMM
+          const startStr = `${data.appointmentDate}T${data.startTime.slice(0, 2)}:${data.startTime.slice(2)}:00`;
+          const endStr = `${data.appointmentDate}T${data.endTime.slice(0, 2)}:${data.endTime.slice(2)}:00`;
+          
+          setMeeting({
+            id: data.appointmentId,
+            name: data.bookingPurpose ? data.bookingPurpose.toUpperCase() : 'MEETING',
+            customerName: data.customerName,
+            start: new Date(startStr).toISOString(),
+            end: new Date(endStr).toISOString(),
+          });
+          
+          // Auto-fill display name if available
+          if (data.customerName) {
+            setDisplayName(data.customerName);
+          }
+
+          // Check if meeting is already completed
+          if (data.status === 'COMPLETED') {
+            setMeetingEnded(true);
+            setMeetingEndedReason('CleanExit');
+          }
+        } catch (err) {
+          console.error('Error fetching appointment:', err);
+          setMeeting(null);
+        } finally {
+          setIsInitialCheck(false);
+        }
+      };
+      
+      fetchMeeting();
     } else {
       setIsInitialCheck(false);
     }
@@ -137,50 +172,27 @@ export function JoinCall() {
     // const timeoutId = setTimeout(() => controller.abort(), 50_000);
 
     try {
-      let response: Response;
+      let response: any;
       try {
-        response = await fetch('http://localhost:3000/api/video/join', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ displayName: displayName.trim() }),
+        response = await apiClient.post('/video/join', { 
+          displayName: displayName.trim(),
+          appointmentId: meeting.id
+        }, {
           signal: controller.signal,
         });
-      } catch (fetchError: any) {
-        // Network-level failures (offline, DNS, CORS, timeout)
-        if (fetchError.name === 'AbortError') {
-          throw new Error(
-            'The request timed out. Please check your internet connection and make sure the backend server is running.'
-          );
+      } catch (axiosError: any) {
+        if (axiosError.name === 'CanceledError') {
+          throw new Error('The request timed out. Please check your internet connection.');
         }
-        throw new Error(
-          'Could not reach the server. Please make sure the backend is running at localhost:3000.'
-        );
-      }
 
-      // Parse JSON safely
-      let data: any;
-      try {
-        data = await response.json();
-      } catch {
-        throw new Error(
-          `Server returned an unexpected response (HTTP ${response.status}). The backend may be misconfigured.`
-        );
-      }
-
-      // API-level errors
-      if (!response.ok || !data.success) {
-        const serverMessage = data?.error?.message || 'Failed to join meeting';
-        const errorCode = data?.error?.code || 'UNKNOWN';
-        const retryable = data?.error?.retryable === true;
-
-        console.error('[JOIN] Server error:', { errorCode, serverMessage, retryable });
-
-        if (retryable) {
-          throw new Error(`${serverMessage} (You can try again.)`);
-        }
+        const serverMessage = axiosError.response?.data?.error?.message || 'Failed to join meeting';
         throw new Error(serverMessage);
+      }
+
+      // Success logic - axios already parsed json and checked status
+      const data = response.data;
+      if (!data.success) {
+        throw new Error(data.error?.message || 'Failed to join meeting');
       }
 
       // Validate the meeting data we received
@@ -202,31 +214,49 @@ export function JoinCall() {
     }
   };
 
-  const endCall = (reason: 'CleanExit' | 'NetworkError' | 'AgentNetworkError' | 'CustomerNetworkError' = 'CleanExit') => {
+  const endCall = async (reason: 'CleanExit' | 'NetworkError' | 'AgentNetworkError' | 'CustomerNetworkError' = 'CleanExit') => {
+    // If it's a clean exit (user or agent clicked leave), mark as completed in DynamoDB
+    if (reason === 'CleanExit' && meeting?.id) {
+      try {
+        await apiClient.post(`/appointments/${meeting.id}/complete`);
+      } catch (err) {
+        console.error('Failed to mark appointment as completed:', err);
+      }
+    }
+
     setMeetingData(null);
     setInCall(false);
     setMeetingEndedReason(reason);
     setMeetingEnded(true);
   };
 
-  // ── 1. Initialization Guard ─────────────────────────
-  // Prevent any UI from rendering until we have checked for the meeting
+  // ── 1. Initialization Skeleton ─────────────────────────
   if (isInitialCheck) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans">
-        <div className="flex flex-col items-center gap-6 animate-in fade-in duration-700">
-          <div className="w-20 h-20 rounded-[28px] bg-white shadow-xl shadow-slate-200/50 border border-slate-100 flex items-center justify-center relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-50/50 to-transparent" />
-            <Loader2 size={32} className="text-blue-500 animate-spin relative z-10" />
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans text-slate-800">
+        <div className="w-full max-w-md bg-white p-8 rounded-[28px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] relative overflow-hidden animate-pulse">
+          {/* Icon Placeholder */}
+          <div className="w-16 h-16 rounded-2xl bg-slate-100 mb-6" />
+          
+          {/* Title Placeholder */}
+          <div className="h-8 bg-slate-100 rounded-lg w-3/4 mb-2" />
+          
+          {/* Description Placeholder */}
+          <div className="h-4 bg-slate-50 rounded-md w-1/2 mb-8" />
+          
+          {/* Form Skeleton */}
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <div className="h-3 bg-slate-100 rounded w-16 mb-2" />
+              <div className="h-12 bg-slate-50 rounded-xl w-full border border-slate-100" />
+            </div>
+            
+            {/* Button Placeholder */}
+            <div className="h-14 bg-slate-100 rounded-xl w-full mt-2" />
           </div>
-          <div className="text-center space-y-1.5">
-            <p className="text-slate-500 font-bold uppercase tracking-[0.2em] text-[10px]">
-              Secure Connection
-            </p>
-            <p className="text-slate-400 text-sm font-medium animate-pulse">
-              Initializing meeting session...
-            </p>
-          </div>
+
+          {/* Shine effect animation */}
+          <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/40 to-transparent animate-[shimmer_2s_infinite]" />
         </div>
       </div>
     );
@@ -248,14 +278,20 @@ export function JoinCall() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans text-slate-800">
         <Modal 
-          variant="red" 
+          variant={meetingEndedReason === 'CleanExit' ? 'red' : 'amber'} 
           overlay={false} 
-          icon={<PhoneOff />}
-          title="Call Ended" 
+          icon={meetingEndedReason === 'CleanExit' ? <PhoneOff /> : <WifiOff />}
+          title={
+            meetingEndedReason === 'AgentNetworkError' ? "Agent Disconnected" :
+            meetingEndedReason === 'CustomerNetworkError' ? "Your Connection Lost" :
+            meetingEndedReason === 'NetworkError' ? "Network Disturbance" :
+            "Call Ended"
+          } 
           msg={
-            meetingEndedReason === 'AgentNetworkError' ? "The agent was disconnected due to a network issue." :
-            meetingEndedReason === 'CustomerNetworkError' ? "Your session ended due to your poor network connection." :
-            "Your session has been completed. Thank you for joining."
+            meetingEndedReason === 'AgentNetworkError' ? "The agent was disconnected due to a severe network issue on their end. Please try rejoining." :
+            meetingEndedReason === 'CustomerNetworkError' ? "Your session was interrupted because of a poor internet connection on your device." :
+            meetingEndedReason === 'NetworkError' ? "We encountered a network issue during the session. Please try to rejoin." :
+            "Your session has been completed successfully. Thank you for joining."
           }
           actions={
             (meetingEndedReason === 'NetworkError' || meetingEndedReason === 'AgentNetworkError' || meetingEndedReason === 'CustomerNetworkError')
@@ -296,7 +332,7 @@ export function JoinCall() {
           </h1>
 
           <p className="text-sm text-slate-500 font-medium mb-6 relative z-10">
-            {state === 'EARLY' ? 'The session starts soon, but you can join early.' : 'The session is active. Enter your name to join.'}
+            {state === 'EARLY' ? 'The session starts soon, but you can join early.' : 'The session is active. Ready to join the call?'}
           </p>
           
           {error && (
@@ -329,9 +365,9 @@ export function JoinCall() {
               <input
                 type="text"
                 value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="e.g. John Doe"
-                className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400 text-slate-900 font-medium"
+                readOnly
+                placeholder="Name will be filled from appointment"
+                className="w-full px-4 py-3 rounded-xl bg-slate-100 border border-slate-200 focus:outline-none cursor-not-allowed placeholder:text-slate-400 text-slate-600 font-medium opacity-80"
                 disabled={isJoining}
               />
             </div>

@@ -6,6 +6,7 @@ import type {
 
 export interface StartVideoCallRequest {
   displayName: string;
+  appointmentId: string;
   email?: string;
   phoneNumber?: string;
   attributes?: Record<string, string>;

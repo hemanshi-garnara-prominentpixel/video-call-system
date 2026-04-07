@@ -11,6 +11,9 @@ export const envConfig = {
     videoFlowId: process.env.CONNECT_VIDEO_FLOW_ID || '',
     videoParticipantTimeout: parseInt(process.env.CONNECT_VIDEO_PARTICIPANT_TIMEOUT || '3600'),
   },
+  dynamo: {
+    tableName: process.env.DYNAMODB_TABLE_NAME || 'Appointments',
+  },
   port: process.env.PORT || 3000,
   nodeEnv: process.env.NODE_ENV || 'development',
 };
@@ -19,6 +22,7 @@ const requiredEnvVars = [
   'CONNECT_INSTANCE_ID',
   'CONNECT_VIDEO_FLOW_ID',
   'AWS_REGION',
+  'DYNAMODB_TABLE_NAME',
 ];
 
 const missingVars = requiredEnvVars.filter(

@@ -28,6 +28,7 @@ export class VideoCallValidator {
     }
 
     return {
+      appointmentId: data.appointmentId,
       displayName: data.displayName,
       email: data.email,
       phoneNumber: data.phoneNumber,

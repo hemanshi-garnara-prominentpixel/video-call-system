@@ -4,8 +4,14 @@
 import express from 'express';
 import cors from 'cors';
 import videoRoutes from './routes/video.routes';
+import appointmentRoutes from './routes/appointment.routes';
 
 const app = express();
+
+app.use((req, res, next) => {
+  console.log(`[DEBUG] Method: ${req.method} | Path: ${req.path}`);
+  next();
+});
 
 // Middleware
 app.use(cors());
@@ -13,6 +19,7 @@ app.use(express.json());
 
 // Routes
 app.use('/api/video', videoRoutes);
+app.use('/api/appointments', appointmentRoutes);
 
 // Server health check
 app.get('/api/health', (req, res) => {

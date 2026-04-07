@@ -1,13 +1,16 @@
 import { ConnectClient } from "@aws-sdk/client-connect";
-import dotenv from "dotenv";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import envConfig from "./env";
 
-dotenv.config();
-const region = process.env.AWS_REGION;
-
-if (!region) {
-  throw new Error("AWS_REGION is missing in .env");
-}
+const region = envConfig.aws.region;
 
 export const connectClient = new ConnectClient({
-  region
+  region,
 });
+
+const dynamoClient = new DynamoDBClient({
+  region,
+});
+
+export const dynamoDocClient = DynamoDBDocumentClient.from(dynamoClient);

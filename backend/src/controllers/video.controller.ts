@@ -8,7 +8,7 @@ export class VideoController {
 
   async joinVideoCall(req: Request, res: Response): Promise<void> {
     try {
-      const { displayName } = req.body;
+      const { displayName, appointmentId } = req.body;
 
       // ── Input validation ────────────────────────────────────────
       if (!displayName || typeof displayName !== 'string' || displayName.trim() === '') {
@@ -34,11 +34,23 @@ export class VideoController {
         });
         return;
       }
+      
+      if (!appointmentId || typeof appointmentId !== 'string' || appointmentId.trim() === '') {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_APPOINTMENT_ID',
+            message: 'appointmentId is required and must be a non-empty string.',
+            retryable: false,
+          },
+        });
+        return;
+      }
 
-      console.log(`[CONTROLLER] User joining: ${displayName}`);
-
+      console.log(`[CONTROLLER] User joining: ${displayName} for appointment: ${appointmentId}`);
+      
       // ── Start the video call ────────────────────────────────────
-      const response = await videoService.startWebRTCVideoCall(displayName.trim());
+      const response = await videoService.startWebRTCVideoCall(displayName.trim(), appointmentId.trim());
 
       res.status(200).json({
         success: true,

@@ -1,14 +1,15 @@
 import {
   ConnectClient,
   StartWebRTCContactCommand,
-} from '@aws-sdk/client-connect';
-import { envConfig } from '../config/env';
+} from "@aws-sdk/client-connect";
+import { envConfig } from "../config/env";
 import {
   StartVideoCallRequest,
   StartVideoCallResponse,
-} from '../types/video.types';
+} from "../types/video.types";
+import { appointmentService } from "./appointment.service";
 
-// ── Structured error for clean propagation ──────────────────────────
+// Structured error for clean propagation
 export class VideoServiceError extends Error {
   constructor(
     message: string,
@@ -17,7 +18,7 @@ export class VideoServiceError extends Error {
     public readonly details?: Record<string, unknown>,
   ) {
     super(message);
-    this.name = 'VideoServiceError';
+    this.name = "VideoServiceError";
   }
 }
 
@@ -32,28 +33,51 @@ export class VideoService {
 
   async startWebRTCVideoCall(
     displayName: string,
+    appointmentId: string,
   ): Promise<StartVideoCallResponse> {
-    // ── Input guard ─────────────────────────────────────────────────
+    // Fetch Appointment Info
+    const appointment = await appointmentService.getAppointmentById(appointmentId);
+    
+    if (!appointment) {
+      throw new VideoServiceError(
+        "Appointment details not found in DynamoDB.",
+        "APPOINTMENT_NOT_FOUND",
+        404,
+      );
+    }
+
+    const { customerName, startTime, endTime, appointmentDate } = appointment;
+
+    // Helper to format 24h time "1230" -> "12:30"
+    const formatTime = (t: string) => {
+      if (t && t.length === 4) return `${t.slice(0, 2)}:${t.slice(2)}`;
+      return t;
+    };
+
+    const formattedStartTime = formatTime(startTime);
+    const formattedEndTime = formatTime(endTime);
+
+    // Input guard
     if (!displayName || displayName.trim().length === 0) {
       throw new VideoServiceError(
-        'displayName is required',
-        'INVALID_INPUT',
+        "displayName is required",
+        "INVALID_INPUT",
         400,
       );
     }
 
     if (!envConfig.connect.instanceId) {
       throw new VideoServiceError(
-        'CONNECT_INSTANCE_ID is not configured on the server',
-        'CONFIG_ERROR',
+        "CONNECT_INSTANCE_ID is not configured on the server",
+        "CONFIG_ERROR",
         500,
       );
     }
 
     if (!envConfig.connect.videoFlowId) {
       throw new VideoServiceError(
-        'CONNECT_VIDEO_FLOW_ID is not configured on the server',
-        'CONFIG_ERROR',
+        "CONNECT_VIDEO_FLOW_ID is not configured on the server",
+        "CONFIG_ERROR",
         500,
       );
     }
@@ -69,17 +93,24 @@ export class VideoService {
             DisplayName: displayName,
           },
           Attributes: {
-            callType: 'public-video-link',
+            callType: "public-video-link",
+            appointmentId: appointmentId,
+            customerName: customerName || displayName,
+            customerEmail: appointment.customerEmail || "",
+            appointmentDate: appointmentDate || "",
+            startTime: formattedStartTime || "",
+            endTime: formattedEndTime || "",
+            bookingPurpose: appointment.bookingPurpose || "",
             timestamp: new Date().toISOString(),
           },
           AllowedCapabilities: {
             Customer: {
-              Video: 'SEND',
-              ScreenShare: 'SEND',
+              Video: "SEND",
+              ScreenShare: "SEND",
             },
             Agent: {
-              Video: 'SEND',
-              ScreenShare: 'SEND',
+              Video: "SEND",
+              ScreenShare: "SEND",
             },
           },
         }),
@@ -89,19 +120,19 @@ export class VideoService {
         `[VIDEO] Response received, ContactId: ${startContactResponse.ContactId}`,
       );
 
-      // ── Validate critical response fields ─────────────────────────
+      // Validate critical response fields
       if (!startContactResponse.ContactId) {
         throw new VideoServiceError(
-          'AWS Connect did not return a ContactId — the contact may not have been created.',
-          'MISSING_CONTACT_ID',
+          "AWS Connect did not return a ContactId — the contact may not have been created.",
+          "MISSING_CONTACT_ID",
           502,
         );
       }
 
       if (!startContactResponse.ParticipantToken) {
         throw new VideoServiceError(
-          'AWS Connect did not return a ParticipantToken — participant registration may have failed.',
-          'MISSING_PARTICIPANT_TOKEN',
+          "AWS Connect did not return a ParticipantToken — participant registration may have failed.",
+          "MISSING_PARTICIPANT_TOKEN",
           502,
         );
       }
@@ -110,24 +141,24 @@ export class VideoService {
 
       if (!connectionData) {
         throw new VideoServiceError(
-          'AWS Connect did not return ConnectionData — the WebRTC session may not have initialised.',
-          'MISSING_CONNECTION_DATA',
+          "AWS Connect did not return ConnectionData — the WebRTC session may not have initialised.",
+          "MISSING_CONNECTION_DATA",
           502,
         );
       }
 
       if (!connectionData.Meeting) {
         throw new VideoServiceError(
-          'Meeting object is missing from ConnectionData — the Chime meeting was not provisioned.',
-          'MISSING_MEETING',
+          "Meeting object is missing from ConnectionData — the Chime meeting was not provisioned.",
+          "MISSING_MEETING",
           502,
         );
       }
 
       if (!connectionData.Attendee) {
         throw new VideoServiceError(
-          'Attendee object is missing from ConnectionData — the attendee was not registered in the meeting.',
-          'MISSING_ATTENDEE',
+          "Attendee object is missing from ConnectionData — the attendee was not registered in the meeting.",
+          "MISSING_ATTENDEE",
           502,
         );
       }
@@ -148,11 +179,11 @@ export class VideoService {
         throw error;
       }
 
-      // ── Classify AWS SDK errors ───────────────────────────────────
-      const awsErrorName: string = error?.name || error?.__type || '';
-      const awsMessage: string = error?.message || 'Unknown AWS error';
+      // Classify AWS SDK errors
+      const awsErrorName: string = error?.name || error?.__type || "";
+      const awsMessage: string = error?.message || "Unknown AWS error";
 
-      console.error('[VIDEO] AWS error:', {
+      console.error("[VIDEO] AWS error:", {
         name: awsErrorName,
         message: awsMessage,
         code: error?.$metadata?.httpStatusCode,
@@ -160,76 +191,76 @@ export class VideoService {
 
       // Throttling / rate-limit
       if (
-        awsErrorName === 'ThrottlingException' ||
-        awsErrorName === 'TooManyRequestsException'
+        awsErrorName === "ThrottlingException" ||
+        awsErrorName === "TooManyRequestsException"
       ) {
         throw new VideoServiceError(
-          'Too many video call requests — please wait a moment and try again.',
-          'RATE_LIMITED',
+          "Too many video call requests — please wait a moment and try again.",
+          "RATE_LIMITED",
           429,
         );
       }
 
       // Auth / permissions
       if (
-        awsErrorName === 'AccessDeniedException' ||
-        awsErrorName === 'UnauthorizedException' ||
-        awsErrorName === 'InvalidAccessKeyId' ||
-        awsErrorName === 'SignatureDoesNotMatch'
+        awsErrorName === "AccessDeniedException" ||
+        awsErrorName === "UnauthorizedException" ||
+        awsErrorName === "InvalidAccessKeyId" ||
+        awsErrorName === "SignatureDoesNotMatch"
       ) {
         throw new VideoServiceError(
-          'The server does not have permission to create video calls. Check AWS credentials and IAM policies.',
-          'AUTH_ERROR',
+          "The server does not have permission to create video calls. Check AWS credentials and IAM policies.",
+          "AUTH_ERROR",
           403,
         );
       }
 
       // Bad parameters
       if (
-        awsErrorName === 'InvalidParameterException' ||
-        awsErrorName === 'ValidationException'
+        awsErrorName === "InvalidParameterException" ||
+        awsErrorName === "ValidationException"
       ) {
         throw new VideoServiceError(
           `Invalid configuration: ${awsMessage}`,
-          'INVALID_PARAMS',
+          "INVALID_PARAMS",
           400,
         );
       }
 
       // Resource not found (bad instance ID / flow ID)
       if (
-        awsErrorName === 'ResourceNotFoundException' ||
-        awsErrorName === 'ContactFlowNotPublishedException'
+        awsErrorName === "ResourceNotFoundException" ||
+        awsErrorName === "ContactFlowNotPublishedException"
       ) {
         throw new VideoServiceError(
-          'The Connect instance or contact flow was not found — check CONNECT_INSTANCE_ID and CONNECT_VIDEO_FLOW_ID.',
-          'RESOURCE_NOT_FOUND',
+          "The Connect instance or contact flow was not found — check CONNECT_INSTANCE_ID and CONNECT_VIDEO_FLOW_ID.",
+          "RESOURCE_NOT_FOUND",
           404,
         );
       }
 
       // Service unavailable
       if (
-        awsErrorName === 'InternalServiceException' ||
-        awsErrorName === 'ServiceQuotaExceededException'
+        awsErrorName === "InternalServiceException" ||
+        awsErrorName === "ServiceQuotaExceededException"
       ) {
         throw new VideoServiceError(
-          'AWS Connect service is temporarily unavailable. Please try again later.',
-          'SERVICE_UNAVAILABLE',
+          "AWS Connect service is temporarily unavailable. Please try again later.",
+          "SERVICE_UNAVAILABLE",
           503,
         );
       }
 
       // Network / connectivity
       if (
-        awsMessage.includes('getaddrinfo') ||
-        awsMessage.includes('ECONNREFUSED') ||
-        awsMessage.includes('ETIMEDOUT') ||
-        awsMessage.includes('NetworkingError')
+        awsMessage.includes("getaddrinfo") ||
+        awsMessage.includes("ECONNREFUSED") ||
+        awsMessage.includes("ETIMEDOUT") ||
+        awsMessage.includes("NetworkingError")
       ) {
         throw new VideoServiceError(
-          'Could not reach AWS services — check the server\'s internet connection.',
-          'NETWORK_ERROR',
+          "Could not reach AWS services — check the server's internet connection.",
+          "NETWORK_ERROR",
           503,
         );
       }
@@ -237,7 +268,7 @@ export class VideoService {
       // Fallback
       throw new VideoServiceError(
         awsMessage,
-        'AWS_ERROR',
+        "AWS_ERROR",
         error?.$metadata?.httpStatusCode || 500,
         { awsErrorName },
       );
@@ -248,7 +279,7 @@ export class VideoService {
     try {
       await this.connectClient.destroy();
     } catch (error) {
-      console.error('[VIDEO] Error disconnecting client:', error);
+      console.error("[VIDEO] Error disconnecting client:", error);
     }
   }
 }
